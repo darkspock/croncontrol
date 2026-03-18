@@ -1,6 +1,7 @@
 server:
   port: 8090
 
+# Local development only — matches docker-compose.yaml
 database:
   host: localhost
   port: 5435
