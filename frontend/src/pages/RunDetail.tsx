@@ -79,25 +79,28 @@ export function RunDetail({ runId }: RunDetailProps) {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 relative z-10">
           {!isRunning && (
             <button
+              type="button"
               onClick={async () => {
+                if (!confirm('Replay this run?')) return
                 const res = await api.replayRun(runId)
                 if (res?.data?.id) {
                   window.history.pushState(null, '', `/runs/${res.data.id}`)
                   window.dispatchEvent(new PopStateEvent('popstate'))
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm hover:bg-muted/50 transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md border border-border text-sm font-medium hover:bg-muted/50 transition-colors cursor-pointer"
             >
-              <RotateCcw size={13} /> Replay
+              <RotateCcw size={14} /> Replay
             </button>
           )}
           {isRunning && (
             <button
+              type="button"
               onClick={handleKill}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm hover:bg-red-500/20 transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors cursor-pointer"
             >
               <XCircle size={13} /> Kill
             </button>
