@@ -16,7 +16,12 @@ export function RunDetail({ runId }: RunDetailProps) {
   const { data: outputData } = useRunOutput(runId)
 
   const run = data?.data
+  const attempts = data?.attempts || []
   const outputs = outputData?.data || []
+
+  // Get error from the latest attempt
+  const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null
+  const errorMessage = lastAttempt?.error_message
 
   const stdout = outputs.filter((o: any) => o.stream === 'stdout').map((o: any) => o.content).join('\n')
   const stderr = outputs.filter((o: any) => o.stream === 'stderr').map((o: any) => o.content).join('\n')
@@ -99,6 +104,39 @@ export function RunDetail({ runId }: RunDetailProps) {
           )}
         </div>
       </div>
+
+      {/* Error message */}
+      {errorMessage && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
+          <div className="flex items-start gap-3">
+            <XCircle size={16} className="text-red-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-400">Execution failed</p>
+              <p className="text-sm text-muted-foreground mt-1 font-mono whitespace-pre-wrap">{errorMessage}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attempts history */}
+      {attempts.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <span className="text-sm font-medium mb-3 block">Attempts</span>
+          <div className="space-y-2">
+            {attempts.map((a: any) => (
+              <div key={a.id} className="flex items-center gap-4 text-xs py-2 border-b border-border last:border-0">
+                <span className="font-mono text-muted-foreground w-6">#{a.attempt_number}</span>
+                <span className={a.error_message ? 'text-red-400' : 'text-emerald-400'}>
+                  {a.error_message ? 'failed' : 'ok'}
+                </span>
+                {a.duration_ms != null && <span className="text-muted-foreground font-mono">{a.duration_ms}ms</span>}
+                {a.exit_code != null && <span className="text-muted-foreground font-mono">exit {a.exit_code}</span>}
+                {a.error_message && <span className="text-red-400/70 truncate max-w-md">{a.error_message}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Progress (non-HTTP, when available) */}
       {run.progress_total != null && run.progress_total > 0 && (

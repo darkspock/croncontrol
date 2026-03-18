@@ -742,7 +742,9 @@ func (s *Service) GetRun(w http.ResponseWriter, r *http.Request) {
 		r := redactID(*run.ActorID)
 		run.ActorID = &r
 	}
-	writeJSON(w, 200, map[string]any{"data": run})
+	// Include attempts with error messages
+	attempts, _ := s.queries.ListRunAttemptsByRun(r.Context(), runID)
+	writeJSON(w, 200, map[string]any{"data": run, "attempts": attempts})
 }
 
 func (s *Service) CancelRun(w http.ResponseWriter, r *http.Request) {
