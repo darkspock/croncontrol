@@ -73,7 +73,11 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = currentPath === item.path ||
-                  (item.path !== '/' && currentPath.startsWith(item.path))
+                  (item.path !== '/' && item.path !== '/settings' && item.path !== '/jobs' && currentPath.startsWith(item.path)) ||
+                  (item.path === '/settings' && currentPath === '/settings') ||
+                  (item.path === '/settings/workers' && currentPath.startsWith('/settings/workers')) ||
+                  (item.path === '/jobs' && currentPath === '/jobs') ||
+                  (item.path === '/jobs/failed' && currentPath === '/jobs/failed')
 
                 return (
                   <button
