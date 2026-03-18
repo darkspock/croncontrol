@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { StateBadge } from '@/components/domain/state-badge'
 import { TargetIcon } from '@/components/domain/target-icon'
 import { ORIGIN_LABELS } from '@/lib/constants'
@@ -17,7 +18,13 @@ export function RunList() {
   const queryStr = params.toString()
 
   const { data, isLoading, refetch } = useRuns(queryStr || undefined)
+  const [spinning, setSpinning] = useState(false)
   const runs = data?.data || []
+
+  const handleRefresh = useCallback(() => {
+    setSpinning(true)
+    refetch().finally(() => setTimeout(() => setSpinning(false), 800))
+  }, [refetch])
 
   const navigateToRun = (runId: string) => {
     window.history.pushState(null, '', `/runs/${runId}`)
@@ -35,10 +42,12 @@ export function RunList() {
         </div>
         <button
           type="button"
-          onClick={() => refetch()}
-          className="relative z-10 px-4 py-2 rounded-md border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          onClick={handleRefresh}
+          disabled={spinning}
+          className="relative z-10 flex items-center gap-2 px-4 py-2 rounded-md border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50"
         >
-          Refresh
+          <RefreshCw size={14} className={spinning ? 'animate-spin' : ''} />
+          {spinning ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
