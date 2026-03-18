@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
 import { formatTimeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -110,9 +111,14 @@ function APIKeysTab() {
               <p className="text-sm font-medium text-emerald-400">API key created!</p>
               <div className="flex gap-2">
                 <code className="flex-1 px-3 py-2 rounded bg-[#0a0a0c] text-xs font-mono text-zinc-300 overflow-hidden">{createdKey}</code>
-                <button onClick={handleCopy} className="px-3 py-2 rounded bg-muted hover:bg-muted/80 transition-colors">
-                  {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" onClick={handleCopy} className="px-3 py-2 rounded bg-muted hover:bg-muted/80 transition-colors">
+                      {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{copied ? 'Copied!' : 'Copy to clipboard'}</TooltipContent>
+                </Tooltip>
               </div>
               <p className="text-xs text-amber-400">Save this key now. It will not be shown again.</p>
               <button onClick={() => { setShowCreate(false); setNewKeyName('') }} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
@@ -148,9 +154,14 @@ function APIKeysTab() {
               <p className="text-xs text-muted-foreground font-mono">{key.key_prefix}···· · {key.role}</p>
             </div>
             <span className="text-xs text-muted-foreground">{key.last_used_at ? formatTimeAgo(key.last_used_at) : 'never used'}</span>
-            <button onClick={() => { if (confirm('Revoke this key?')) deleteMutation.mutate(key.id) }} className="p-1 rounded hover:bg-red-500/10 transition-colors">
-              <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => { if (confirm('Revoke this key?')) deleteMutation.mutate(key.id) }} className="p-1.5 rounded hover:bg-red-500/10 transition-colors">
+                  <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Revoke key</TooltipContent>
+            </Tooltip>
           </div>
         ))}
       </div>
@@ -229,9 +240,14 @@ function WorkersTab() {
               <p className="text-xs text-muted-foreground font-mono">{w.status} · max {w.max_concurrency} concurrent</p>
             </div>
             {w.last_heartbeat_at && <span className="text-xs text-muted-foreground">heartbeat {formatTimeAgo(w.last_heartbeat_at)}</span>}
-            <button onClick={() => { if (confirm('Delete this worker?')) deleteMutation.mutate(w.id) }} className="p-1 rounded hover:bg-red-500/10 transition-colors">
-              <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => { if (confirm('Delete this worker?')) deleteMutation.mutate(w.id) }} className="p-1.5 rounded hover:bg-red-500/10 transition-colors">
+                  <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Delete worker</TooltipContent>
+            </Tooltip>
           </div>
         ))}
       </div>
@@ -497,9 +513,14 @@ function CredentialSection({ title, description, type, endpoint }: { title: stri
               </p>
             </div>
             <span className="text-xs text-muted-foreground">{item.created_at ? formatTimeAgo(item.created_at) : ''}</span>
-            <button onClick={() => handleDelete(item.id)} className="p-1 rounded hover:bg-red-500/10 transition-colors">
-              <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-red-500/10 transition-colors">
+                  <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
           </div>
         ))}
       </div>

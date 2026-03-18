@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft, Play, Pause, Trash2 } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { StateBadge } from '@/components/domain/state-badge'
 import { TargetIcon } from '@/components/domain/target-icon'
 import { SCHEDULE_LABELS, ORIGIN_LABELS } from '@/lib/constants'
@@ -98,10 +99,15 @@ export function ProcessDetail({ processId }: ProcessDetailProps) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm hover:bg-muted/50 transition-colors">
             <Pause size={13} /> {proc.enabled ? 'Pause' : 'Resume'}
           </button>
-          <button onClick={() => { if (confirm(`Delete "${proc.name}"?`)) deleteMut.mutate() }}
-            className="p-1.5 rounded-md border border-border hover:bg-red-500/10 transition-colors">
-            <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={() => { if (confirm(`Delete "${proc.name}"?`)) deleteMut.mutate() }}
+                className="p-1.5 rounded-md border border-border hover:bg-red-500/10 transition-colors">
+                <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Delete process</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
