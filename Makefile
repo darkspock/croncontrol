@@ -164,6 +164,35 @@ clean:
 	rm -rf croncontrol croncontrol-worker cronctl croncontrol-mcp
 	rm -rf coverage.out coverage.html tmp/
 
+# ============================================================================
+# Deploy
+# ============================================================================
+
+SERVER := root@49.13.224.222
+DEPLOY_DIR := /opt/croncontrol
+
+## Deploy to production (git push)
+deploy:
+	git push production main
+
+## Setup production server (run once)
+deploy-setup:
+	ssh $(SERVER) "mkdir -p $(DEPLOY_DIR)/app && git init --bare $(DEPLOY_DIR)/repo.git"
+	scp deploy/setup.sh $(SERVER):$(DEPLOY_DIR)/app/deploy/setup.sh
+	ssh $(SERVER) "bash $(DEPLOY_DIR)/app/deploy/setup.sh"
+
+## Add production git remote
+deploy-remote:
+	git remote add production $(SERVER):$(DEPLOY_DIR)/repo.git || echo "Remote 'production' already exists"
+
+## SSH into server
+ssh:
+	ssh $(SERVER)
+
+## Check production health
+deploy-health:
+	@curl -sf https://croncontrol.dev/health | python3 -m json.tool || echo "Health check failed"
+
 ## Show this help
 help:
 	@echo "CronControl Makefile"
