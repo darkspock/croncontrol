@@ -16,7 +16,7 @@ export function RunDetail({ runId }: RunDetailProps) {
   const { data: outputData } = useRunOutput(runId)
 
   const run = data?.data
-  const attempts = data?.attempts || []
+  const attempts = (data as any)?.attempts || []
   const outputs = outputData?.data || []
 
   // Get error from the latest attempt
