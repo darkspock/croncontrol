@@ -1555,6 +1555,209 @@ func (s *Service) TriggerCleanup(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// Webhook Subscriptions
+// ============================================================================
+
+func (s *Service) ListWebhookSubscriptions(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	subs, err := s.queries.ListWebhookSubscriptionsByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list webhooks", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": subs, "meta": map[string]any{"total": len(subs)}})
+}
+
+func (s *Service) CreateWebhookSubscription(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		URL        string   `json:"url"`
+		Secret     string   `json:"secret"`
+		EventTypes []string `json:"event_types"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.URL == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "url is required", "")
+		return
+	}
+	sub, err := s.queries.CreateWebhookSubscription(r.Context(), db.CreateWebhookSubscriptionParams{
+		ID:          id.New("whs_"),
+		WorkspaceID: wsID,
+		Url:         req.URL,
+		Secret:      req.Secret,
+		EventTypes:  req.EventTypes,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create webhook", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": sub})
+}
+
+func (s *Service) DeleteWebhookSubscription(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	subID := chi.URLParam(r, "id")
+	deleted, err := s.queries.DeleteWebhookSubscription(r.Context(), db.DeleteWebhookSubscriptionParams{ID: subID, WorkspaceID: wsID})
+	if err != nil || deleted == 0 {
+		writeError(w, 404, "NOT_FOUND", "Webhook subscription not found", "")
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// ============================================================================
+// Credentials (SSH, SSM, K8s)
+// ============================================================================
+
+func (s *Service) ListSSHCredentials(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	creds, err := s.queries.ListSSHCredentialsByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list SSH credentials", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": creds, "meta": map[string]any{"total": len(creds)}})
+}
+
+func (s *Service) CreateSSHCredential(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		Name       string `json:"name"`
+		PrivateKey string `json:"private_key"`
+		Username   string `json:"username"`
+		Port       int    `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "name is required", "")
+		return
+	}
+	// In production, encrypt private_key before storing
+	port := int32(req.Port)
+	if port == 0 {
+		port = 22
+	}
+	cred, err := s.queries.CreateSSHCredential(r.Context(), db.CreateSSHCredentialParams{
+		ID:            id.New("ssh_"),
+		WorkspaceID:   wsID,
+		Name:          req.Name,
+		PrivateKeyEnc: []byte(req.PrivateKey),
+		Fingerprint:   "sha256:" + req.Name,
+		Username:      &req.Username,
+		Port:          &port,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create SSH credential", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": cred})
+}
+
+func (s *Service) DeleteSSHCredential(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	credID := chi.URLParam(r, "id")
+	deleted, err := s.queries.DeleteSSHCredential(r.Context(), db.DeleteSSHCredentialParams{ID: credID, WorkspaceID: wsID})
+	if err != nil || deleted == 0 {
+		writeError(w, 404, "NOT_FOUND", "SSH credential not found", "")
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Service) ListSSMProfiles(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	profiles, err := s.queries.ListSSMProfilesByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list SSM profiles", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": profiles, "meta": map[string]any{"total": len(profiles)}})
+}
+
+func (s *Service) CreateSSMProfile(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		Name    string  `json:"name"`
+		Region  string  `json:"region"`
+		RoleARN *string `json:"role_arn"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Region == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "name and region are required", "")
+		return
+	}
+	profile, err := s.queries.CreateSSMProfile(r.Context(), db.CreateSSMProfileParams{
+		ID:          id.New("ssp_"),
+		WorkspaceID: wsID,
+		Name:        req.Name,
+		Region:      req.Region,
+		RoleArn:     req.RoleARN,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create SSM profile", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": profile})
+}
+
+func (s *Service) DeleteSSMProfile(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	profID := chi.URLParam(r, "id")
+	deleted, err := s.queries.DeleteSSMProfile(r.Context(), db.DeleteSSMProfileParams{ID: profID, WorkspaceID: wsID})
+	if err != nil || deleted == 0 {
+		writeError(w, 404, "NOT_FOUND", "SSM profile not found", "")
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (s *Service) ListK8sClusters(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	clusters, err := s.queries.ListK8sClustersByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list K8s clusters", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": clusters, "meta": map[string]any{"total": len(clusters)}})
+}
+
+func (s *Service) CreateK8sCluster(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		Name             string `json:"name"`
+		DefaultNamespace string `json:"default_namespace"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "name is required", "")
+		return
+	}
+	ns := req.DefaultNamespace
+	if ns == "" {
+		ns = "default"
+	}
+	cluster, err := s.queries.CreateK8sCluster(r.Context(), db.CreateK8sClusterParams{
+		ID:               id.New("k8c_"),
+		WorkspaceID:      wsID,
+		Name:             req.Name,
+		KubeconfigEnc:    []byte(""),
+		DefaultNamespace: &ns,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create K8s cluster", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": cluster})
+}
+
+func (s *Service) DeleteK8sCluster(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	clusterID := chi.URLParam(r, "id")
+	deleted, err := s.queries.DeleteK8sCluster(r.Context(), db.DeleteK8sClusterParams{ID: clusterID, WorkspaceID: wsID})
+	if err != nil || deleted == 0 {
+		writeError(w, 404, "NOT_FOUND", "K8s cluster not found", "")
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// ============================================================================
 // Webhook Test Delivery
 // ============================================================================
 

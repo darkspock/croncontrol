@@ -378,7 +378,21 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Post("/users/invite", svc.InviteMember)
 
 			// Webhooks
+			r.Get("/webhook-subscriptions", svc.ListWebhookSubscriptions)
+			r.Post("/webhook-subscriptions", svc.CreateWebhookSubscription)
+			r.Delete("/webhook-subscriptions/{id}", svc.DeleteWebhookSubscription)
 			r.Post("/webhook-subscriptions/{id}/test", svc.TestWebhookDelivery)
+
+			// Credentials
+			r.Get("/ssh-credentials", svc.ListSSHCredentials)
+			r.Post("/ssh-credentials", svc.CreateSSHCredential)
+			r.Delete("/ssh-credentials/{id}", svc.DeleteSSHCredential)
+			r.Get("/ssm-profiles", svc.ListSSMProfiles)
+			r.Post("/ssm-profiles", svc.CreateSSMProfile)
+			r.Delete("/ssm-profiles/{id}", svc.DeleteSSMProfile)
+			r.Get("/k8s-clusters", svc.ListK8sClusters)
+			r.Post("/k8s-clusters", svc.CreateK8sCluster)
+			r.Delete("/k8s-clusters/{id}", svc.DeleteK8sCluster)
 
 			// System (workspace admin)
 			r.Post("/system/cleanup", svc.TriggerCleanup)

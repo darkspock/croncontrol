@@ -130,12 +130,13 @@ export function OnboardingBanner() {
               </div>
               <p className="text-xs text-muted-foreground mb-2">{step.description}</p>
               {!isComplete && (
-                <a
-                  href={step.href}
+                <button
+                  type="button"
+                  onClick={() => { window.history.pushState(null, '', step.href); window.dispatchEvent(new PopStateEvent('popstate')) }}
                   className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                 >
                   {step.action} <ArrowRight size={10} />
-                </a>
+                </button>
               )}
             </div>
           )

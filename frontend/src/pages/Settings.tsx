@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils'
 type Tab = 'api-keys' | 'workers' | 'members' | 'webhooks' | 'credentials'
 
 export function Settings() {
-  const [tab, setTab] = useState<Tab>('api-keys')
+  // Pre-select tab from URL (e.g., /settings/workers)
+  const pathTab = window.location.pathname.split('/')[2] as Tab | undefined
+  const [tab, setTab] = useState<Tab>(pathTab && ['api-keys', 'workers', 'members', 'webhooks', 'credentials'].includes(pathTab) ? pathTab : 'api-keys')
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: 'api-keys', label: 'API Keys', icon: Key },
@@ -333,14 +335,14 @@ function WebhooksTab() {
   const [events, setEvents] = useState('run.*,job.*')
   const [testResult, setTestResult] = useState<Record<string, string>>({})
 
-  useState(() => {
+  useEffect(() => {
     fetch('/api/v1/webhook-subscriptions', {
       headers: { 'X-API-Key': localStorage.getItem('cc_api_key') || '' },
     }).then(r => r.ok ? r.json() : { data: [] }).then(d => {
       setSubs(d.data || [])
       setLoading(false)
     }).catch(() => setLoading(false))
-  })
+  }, [])
 
   const handleCreate = async () => {
     const res = await fetch('/api/v1/webhook-subscriptions', {
@@ -454,14 +456,14 @@ function CredentialSection({ title, description, type, endpoint }: { title: stri
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  useState(() => {
+  useEffect(() => {
     fetch(endpoint, {
       headers: { 'X-API-Key': localStorage.getItem('cc_api_key') || '' },
     }).then(r => r.ok ? r.json() : { data: [] }).then(d => {
       setItems(d.data || [])
       setLoading(false)
     }).catch(() => setLoading(false))
-  })
+  }, [])
 
   const handleDelete = async (id: string) => {
     if (!confirm(`Delete this ${type} credential?`)) return
