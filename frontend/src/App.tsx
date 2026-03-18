@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from 'sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppLayout } from '@/components/layout/app-layout'
 import { Login } from '@/pages/Login'
 import { VerifyEmail } from '@/pages/VerifyEmail'
@@ -125,9 +127,12 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppLayout>
-        <Router />
-      </AppLayout>
+      <TooltipProvider delayDuration={300}>
+        <Toaster theme="dark" position="bottom-right" richColors />
+        <AppLayout>
+          <Router />
+        </AppLayout>
+      </TooltipProvider>
     </QueryClientProvider>
   )
 }

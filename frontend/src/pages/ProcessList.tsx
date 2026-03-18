@@ -1,5 +1,7 @@
 import { Plus, Play, Pause, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { TargetIcon } from '@/components/domain/target-icon'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { SCHEDULE_LABELS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { useProcesses, useTriggerProcess } from '@/hooks/use-api'
@@ -12,16 +14,35 @@ export function ProcessList() {
   const qc = useQueryClient()
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteProcess(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['processes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['processes'] })
+      toast.success('Process deleted')
+    },
+    onError: () => toast.error('Failed to delete process'),
   })
   const pauseMutation = useMutation({
     mutationFn: (id: string) => api.pauseProcess(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['processes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['processes'] })
+      toast.success('Process paused')
+    },
+    onError: () => toast.error('Failed to pause process'),
   })
   const resumeMutation = useMutation({
     mutationFn: (id: string) => api.resumeProcess(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['processes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['processes'] })
+      toast.success('Process resumed')
+    },
+    onError: () => toast.error('Failed to resume process'),
   })
+
+  const handleTrigger = (proc: any) => {
+    trigger.mutate(proc.id, {
+      onSuccess: () => toast.success(`"${proc.name}" queued for execution`),
+      onError: () => toast.error(`Failed to trigger "${proc.name}"`),
+    })
+  }
 
   const processes = data?.data || []
 
@@ -102,32 +123,49 @@ export function ProcessList() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => { if (confirm(`Trigger "${proc.name}" now?`)) trigger.mutate(proc.id) }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-indigo-400 hover:bg-indigo-500/10 transition-colors"
-                      >
-                        <Play size={13} />
-                        Trigger
-                      </button>
-                      <button
-                        onClick={() => {
-                          const action = proc.enabled ? 'Pause' : 'Resume'
-                          if (confirm(`${action} "${proc.name}"?`))
-                            proc.enabled ? pauseMutation.mutate(proc.id) : resumeMutation.mutate(proc.id)
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
-                      >
-                        <Pause size={13} />
-                        {proc.enabled ? 'Pause' : 'Resume'}
-                      </button>
-                      <button
-                        onClick={() => { if (confirm(`Delete "${proc.name}"? This cannot be undone.`)) deleteMutation.mutate(proc.id) }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-                      >
-                        <Trash2 size={13} />
-                        Delete
-                      </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => { if (confirm(`Trigger "${proc.name}" now?`)) handleTrigger(proc) }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                          >
+                            <Play size={13} />
+                            Trigger
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Execute this process immediately</TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => {
+                              const action = proc.enabled ? 'Pause' : 'Resume'
+                              if (confirm(`${action} "${proc.name}"?`))
+                                proc.enabled ? pauseMutation.mutate(proc.id) : resumeMutation.mutate(proc.id)
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+                          >
+                            <Pause size={13} />
+                            {proc.enabled ? 'Pause' : 'Resume'}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{proc.enabled ? 'Pause scheduling — running executions continue' : 'Resume scheduling'}</TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => { if (confirm(`Delete "${proc.name}"? This cannot be undone.`)) deleteMutation.mutate(proc.id) }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                            Delete
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Permanently delete this process</TooltipContent>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
