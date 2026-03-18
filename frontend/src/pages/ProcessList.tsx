@@ -64,14 +64,15 @@ export function ProcessList() {
             </thead>
             <tbody className="divide-y divide-border">
               {processes.map((proc: any) => (
-                <tr key={proc.id}
-                  onClick={() => { window.history.pushState(null, '', `/processes/${proc.id}`); window.dispatchEvent(new PopStateEvent('popstate')) }}
-                  className="hover:bg-muted/20 transition-colors cursor-pointer">
+                <tr key={proc.id} className="hover:bg-muted/20 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className={cn('w-1.5 h-1.5 rounded-full', proc.enabled ? 'bg-emerald-400' : 'bg-zinc-500')} />
+                    <button
+                      onClick={() => { window.history.pushState(null, '', `/processes/${proc.id}`); window.dispatchEvent(new PopStateEvent('popstate')) }}
+                      className="flex items-center gap-2 hover:text-indigo-400 transition-colors text-left"
+                    >
+                      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', proc.enabled ? 'bg-emerald-400' : 'bg-zinc-500')} />
                       <span className="text-sm font-medium">{proc.name}</span>
-                    </div>
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
