@@ -721,6 +721,12 @@ func (s *Service) ListRuns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "INTERNAL_ERROR", "Failed to list runs", "")
 		return
 	}
+	for i := range runs {
+		if runs[i].ActorID != nil {
+			r := redactID(*runs[i].ActorID)
+			runs[i].ActorID = &r
+		}
+	}
 	writeJSON(w, 200, map[string]any{"data": runs, "meta": map[string]any{"total": len(runs)}})
 }
 
@@ -731,6 +737,10 @@ func (s *Service) GetRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, 404, "NOT_FOUND", "Run not found", "")
 		return
+	}
+	if run.ActorID != nil {
+		r := redactID(*run.ActorID)
+		run.ActorID = &r
 	}
 	writeJSON(w, 200, map[string]any{"data": run})
 }
@@ -1881,6 +1891,24 @@ func generateRawAPIKey() string {
 func hashSHA256(s string) string {
 	h := auth.HashAPIKey(s)
 	return h
+}
+
+// redactID masks internal IDs in API responses. Shows prefix + first 4 chars only.
+func redactID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	// Find prefix end (e.g., "key_", "usr_")
+	for i, c := range id {
+		if c == '_' && i < 5 {
+			remaining := id[i+1:]
+			if len(remaining) > 4 {
+				return id[:i+1] + remaining[:4] + "····"
+			}
+			return id
+		}
+	}
+	return id[:4] + "····"
 }
 
 // Suppress unused import warnings

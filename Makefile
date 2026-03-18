@@ -10,9 +10,9 @@
 # Main targets
 # ============================================================================
 
-## Start everything: PostgreSQL + migrations + seed + app
-start: setup
-	@echo "Starting CronControl on http://localhost:8080..."
+## Start everything: PostgreSQL + migrations + build frontend + app
+start: setup build-frontend
+	@echo "Starting CronControl on http://localhost:8090..."
 	go run .
 
 ## Start with OpenSearch logging backend

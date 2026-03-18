@@ -18,7 +18,7 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process deleted')
     },
-    onError: (err: any) => toast.error('Failed to delete process', { description: err.message || err.hint }),
+    onError: (err: any) => toast.error('Failed to delete process', { description: errDesc(err) }),
   })
   const pauseMutation = useMutation({
     mutationFn: (id: string) => api.pauseProcess(id),
@@ -26,7 +26,7 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process paused')
     },
-    onError: (err: any) => toast.error('Failed to pause process', { description: err.message || err.hint }),
+    onError: (err: any) => toast.error('Failed to pause process', { description: errDesc(err) }),
   })
   const resumeMutation = useMutation({
     mutationFn: (id: string) => api.resumeProcess(id),
@@ -34,13 +34,15 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process resumed')
     },
-    onError: (err: any) => toast.error('Failed to resume process', { description: err.message || err.hint }),
+    onError: (err: any) => toast.error('Failed to resume process', { description: errDesc(err) }),
   })
+
+  const errDesc = (err: any) => err?.message || err?.hint || String(err)
 
   const handleTrigger = (proc: any) => {
     trigger.mutate(proc.id, {
       onSuccess: () => toast.success(`"${proc.name}" queued for execution`),
-      onError: (err: any) => toast.error(`Failed to trigger "${proc.name}"`, { description: err.message || err.hint }),
+      onError: (err: any) => toast.error(`Failed to trigger "${proc.name}"`, { description: errDesc(err) }),
     })
   }
 
@@ -123,18 +125,17 @@ export function ProcessList() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-2">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
                             onClick={() => { if (confirm(`Trigger "${proc.name}" now?`)) handleTrigger(proc) }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                            className="p-2 rounded-md text-muted-foreground hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
                           >
-                            <Play size={13} />
-                            Trigger
+                            <Play size={16} />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>Execute this process immediately</TooltipContent>
+                        <TooltipContent>Trigger now</TooltipContent>
                       </Tooltip>
 
                       <Tooltip>
@@ -145,23 +146,21 @@ export function ProcessList() {
                               if (confirm(`${action} "${proc.name}"?`))
                                 proc.enabled ? pauseMutation.mutate(proc.id) : resumeMutation.mutate(proc.id)
                             }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+                            className="p-2 rounded-md text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
                           >
-                            <Pause size={13} />
-                            {proc.enabled ? 'Pause' : 'Resume'}
+                            <Pause size={16} />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>{proc.enabled ? 'Pause scheduling — running executions continue' : 'Resume scheduling'}</TooltipContent>
+                        <TooltipContent>{proc.enabled ? 'Pause' : 'Resume'}</TooltipContent>
                       </Tooltip>
 
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
                             onClick={() => { if (confirm(`Delete "${proc.name}"? This cannot be undone.`)) deleteMutation.mutate(proc.id) }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                            className="p-2 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
                           >
-                            <Trash2 size={13} />
-                            Delete
+                            <Trash2 size={16} />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>Permanently delete this process</TooltipContent>

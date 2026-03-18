@@ -143,7 +143,7 @@ function APIKeysTab() {
             <Key size={14} className="text-muted-foreground" />
             <div className="flex-1">
               <p className="text-sm font-medium">{key.name}</p>
-              <p className="text-xs text-muted-foreground font-mono">{key.key_prefix?.slice(0, 6)}····{key.key_prefix?.slice(-2)} · {key.role}</p>
+              <p className="text-xs text-muted-foreground font-mono">{key.key_prefix}···· · {key.role}</p>
             </div>
             <span className="text-xs text-muted-foreground">{key.last_used_at ? formatTimeAgo(key.last_used_at) : 'never used'}</span>
             <button onClick={() => { if (confirm('Revoke this key?')) deleteMutation.mutate(key.id) }} className="p-1 rounded hover:bg-red-500/10 transition-colors">
