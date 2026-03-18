@@ -770,6 +770,47 @@ func (s *Service) KillRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "kill_requested"}})
 }
 
+func (s *Service) ReplayRun(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	runID := chi.URLParam(r, "id")
+	actor, _ := auth.GetActor(r.Context())
+
+	// Get original run
+	origRun, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
+
+	// Only replay terminal runs
+	state := runstate.State(origRun.State)
+	if !runstate.IsTerminal(state) {
+		writeError(w, 400, "VALIDATION_ERROR", "Can only replay terminal runs", "Run is still "+origRun.State)
+		return
+	}
+
+	// Create new run as replay
+	newRun, err := s.queries.CreateRun(r.Context(), db.CreateRunParams{
+		ID:               id.NewRun(),
+		WorkspaceID:      wsID,
+		ProcessID:        origRun.ProcessID,
+		ScheduledAt:      dbutil.Timestamptz(time.Now().UTC()),
+		State:            string(runstate.Pending),
+		Origin:           "replay",
+		MaxAttempts:       origRun.MaxAttempts,
+		ActorType:        &actor.Type,
+		ActorID:          &actor.ID,
+		ReplayedFromRunID: &runID,
+		Tags:             origRun.Tags,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create replay run", err.Error())
+		return
+	}
+
+	writeJSON(w, 201, map[string]any{"data": newRun})
+}
+
 func (s *Service) GetRunOutput(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	streamVal := r.URL.Query().Get("stream")

@@ -347,6 +347,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Get("/runs/{id}", svc.GetRun)
 			r.Post("/runs/{id}/cancel", svc.CancelRun)
 			r.Post("/runs/{id}/kill", svc.KillRun)
+			r.Post("/runs/{id}/replay", svc.ReplayRun)
 			r.Get("/runs/{id}/output", svc.GetRunOutput)
 
 			// Queues
