@@ -393,6 +393,19 @@ func (s *Service) createToken(ctx context.Context, userID, tokenType string, ttl
 }
 
 // ============================================================================
+// Public Config (no auth)
+// ============================================================================
+
+// GetPublicConfig returns feature flags for the frontend (no auth required).
+func (s *Service) GetPublicConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{
+		"data": map[string]any{
+			"google_oauth_enabled": s.googleAuth != nil,
+		},
+	})
+}
+
+// ============================================================================
 // Workspace
 // ============================================================================
 

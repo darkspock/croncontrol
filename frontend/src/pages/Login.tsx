@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 
 type Mode = 'login' | 'register' | 'apikey'
 
 export function Login() {
   const [mode, setMode] = useState<Mode>('login')
+  const [googleOAuth, setGoogleOAuth] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/v1/config').then(r => r.json()).then(d => {
+      setGoogleOAuth(d.data?.google_oauth_enabled === true)
+    }).catch(() => {})
+  }, [])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -148,8 +155,8 @@ export function Login() {
             </form>
           )}
 
-          {/* Google OAuth */}
-          {mode === 'login' && (
+          {/* Google OAuth — only shows if configured on server */}
+          {mode === 'login' && googleOAuth && (
             <div className="pt-2 border-t border-border">
               <a href="/api/v1/auth/google/login"
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-muted/50 transition-colors">

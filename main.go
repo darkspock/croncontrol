@@ -310,6 +310,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 		r.Get("/openapi.yaml", handler.ServeOpenAPI)
 
 		// Unauthenticated routes
+		r.Get("/config", svc.GetPublicConfig)
 		r.Post("/register", svc.Register)
 		r.Post("/login", svc.Login)
 		r.Post("/heartbeat", svc.Heartbeat)
