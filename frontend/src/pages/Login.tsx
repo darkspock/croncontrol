@@ -6,10 +6,12 @@ type Mode = 'login' | 'register' | 'apikey'
 export function Login() {
   const [mode, setMode] = useState<Mode>('login')
   const [googleOAuth, setGoogleOAuth] = useState(false)
+  const [demoBanner, setDemoBanner] = useState('')
 
   useEffect(() => {
     fetch('/api/v1/config').then(r => r.json()).then(d => {
       setGoogleOAuth(d.data?.google_oauth_enabled === true)
+      if (d.data?.demo_banner) setDemoBanner(d.data.demo_banner)
     }).catch(() => {})
   }, [])
   const [email, setEmail] = useState('')
@@ -89,6 +91,12 @@ export function Login() {
             <p className="text-sm text-muted-foreground mt-1">Control plane for operational workloads</p>
           </div>
         </div>
+
+        {demoBanner && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-center">
+            <p className="text-xs text-amber-400">{demoBanner}</p>
+          </div>
+        )}
 
         {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
         {success && <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-400">{success}</div>}

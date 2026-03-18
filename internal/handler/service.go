@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -398,11 +399,13 @@ func (s *Service) createToken(ctx context.Context, userID, tokenType string, ttl
 
 // GetPublicConfig returns feature flags for the frontend (no auth required).
 func (s *Service) GetPublicConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{
-		"data": map[string]any{
-			"google_oauth_enabled": s.googleAuth != nil,
-		},
-	})
+	config := map[string]any{
+		"google_oauth_enabled": s.googleAuth != nil,
+	}
+	if banner := os.Getenv("CC_DEMO_BANNER"); banner != "" {
+		config["demo_banner"] = banner
+	}
+	writeJSON(w, 200, map[string]any{"data": config})
 }
 
 // ============================================================================
