@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import cronstrue from 'cronstrue'
 import { api } from '@/api/client'
 import { SCHEDULE_LABELS } from '@/lib/constants'
 
@@ -117,7 +118,7 @@ export function ProcessCreate() {
               placeholder="*/5 * * * *"
               className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
             />
-            <p className="text-xs text-muted-foreground">Standard 5-field cron syntax (minute hour dom month dow)</p>
+            <CronPreview expression={schedule} />
           </div>
         )}
 
@@ -215,6 +216,27 @@ export function ProcessCreate() {
           {submitting ? 'Creating...' : 'Create Process'}
         </button>
       </form>
+    </div>
+  )
+}
+
+function CronPreview({ expression }: { expression: string }) {
+  const description = useMemo(() => {
+    if (!expression || !expression.trim()) return null
+    try {
+      return cronstrue.toString(expression, { locale: 'en', use24HourTimeFormat: true })
+    } catch {
+      return null
+    }
+  }, [expression])
+
+  return (
+    <div className="text-xs text-muted-foreground mt-1">
+      {description ? (
+        <span className="text-indigo-400">{description}</span>
+      ) : (
+        <span>Standard 5-field cron syntax (minute hour dom month dow)</span>
+      )}
     </div>
   )
 }

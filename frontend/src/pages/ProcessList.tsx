@@ -100,28 +100,32 @@ export function ProcessList() {
                       {proc.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={(e) => { e.stopPropagation(); trigger.mutate(proc.id) }}
-                        className="p-1 rounded hover:bg-muted transition-colors"
-                        title="Trigger"
+                        onClick={() => { if (confirm(`Trigger "${proc.name}" now?`)) trigger.mutate(proc.id) }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-indigo-400 hover:bg-indigo-500/10 transition-colors"
                       >
-                        <Play size={14} className="text-muted-foreground" />
+                        <Play size={13} />
+                        Trigger
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); proc.enabled ? pauseMutation.mutate(proc.id) : resumeMutation.mutate(proc.id) }}
-                        className="p-1 rounded hover:bg-muted transition-colors"
-                        title={proc.enabled ? 'Pause' : 'Resume'}
+                        onClick={() => {
+                          const action = proc.enabled ? 'Pause' : 'Resume'
+                          if (confirm(`${action} "${proc.name}"?`))
+                            proc.enabled ? pauseMutation.mutate(proc.id) : resumeMutation.mutate(proc.id)
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
                       >
-                        <Pause size={14} className="text-muted-foreground" />
+                        <Pause size={13} />
+                        {proc.enabled ? 'Pause' : 'Resume'}
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${proc.name}"?`)) deleteMutation.mutate(proc.id) }}
-                        className="p-1 rounded hover:bg-red-500/10 transition-colors"
-                        title="Delete"
+                        onClick={() => { if (confirm(`Delete "${proc.name}"? This cannot be undone.`)) deleteMutation.mutate(proc.id) }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
                       >
-                        <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                        <Trash2 size={13} />
+                        Delete
                       </button>
                     </div>
                   </td>
