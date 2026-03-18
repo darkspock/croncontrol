@@ -3,7 +3,7 @@ import { StateBadge } from '@/components/domain/state-badge'
 import { TargetIcon } from '@/components/domain/target-icon'
 import { ORIGIN_LABELS } from '@/lib/constants'
 import { useRuns } from '@/hooks/use-api'
-import { formatTimeAgo, formatDuration } from '@/lib/utils'
+import { formatDuration } from '@/lib/utils'
 
 const STATE_OPTIONS = ['', 'pending', 'running', 'completed', 'failed', 'hung', 'killed', 'retrying', 'skipped', 'cancelled', 'paused']
 
@@ -97,10 +97,9 @@ export function RunList() {
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">State</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Origin</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Attempt</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Progress</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Started</th>
                 <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Scheduled</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Age</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Scheduled</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -132,33 +131,18 @@ export function RunList() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {run.progress != null ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-indigo-500 rounded-full"
-                            style={{ width: `${Math.min(run.progress, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-muted-foreground">{run.progress}%</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {run.started_at ? new Date(run.started_at).toLocaleString() : '—'}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs font-mono text-muted-foreground">
                       {run.duration_ms ? formatDuration(run.duration_ms) : '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-right">
                     <span className="text-xs font-mono text-muted-foreground">
                       {run.scheduled_at ? new Date(run.scheduled_at).toLocaleString() : '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-xs text-muted-foreground">
-                      {run.created_at ? formatTimeAgo(run.created_at) : '—'}
                     </span>
                   </td>
                 </tr>
