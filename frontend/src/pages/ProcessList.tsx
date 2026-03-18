@@ -18,7 +18,7 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process deleted')
     },
-    onError: () => toast.error('Failed to delete process'),
+    onError: (err: any) => toast.error('Failed to delete process', { description: err.message || err.hint }),
   })
   const pauseMutation = useMutation({
     mutationFn: (id: string) => api.pauseProcess(id),
@@ -26,7 +26,7 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process paused')
     },
-    onError: () => toast.error('Failed to pause process'),
+    onError: (err: any) => toast.error('Failed to pause process', { description: err.message || err.hint }),
   })
   const resumeMutation = useMutation({
     mutationFn: (id: string) => api.resumeProcess(id),
@@ -34,13 +34,13 @@ export function ProcessList() {
       qc.invalidateQueries({ queryKey: ['processes'] })
       toast.success('Process resumed')
     },
-    onError: () => toast.error('Failed to resume process'),
+    onError: (err: any) => toast.error('Failed to resume process', { description: err.message || err.hint }),
   })
 
   const handleTrigger = (proc: any) => {
     trigger.mutate(proc.id, {
       onSuccess: () => toast.success(`"${proc.name}" queued for execution`),
-      onError: () => toast.error(`Failed to trigger "${proc.name}"`),
+      onError: (err: any) => toast.error(`Failed to trigger "${proc.name}"`, { description: err.message || err.hint }),
     })
   }
 
