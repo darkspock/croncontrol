@@ -207,13 +207,31 @@ function WorkersTab() {
       {showCreate && (
         <div className="rounded-lg border border-border bg-card p-4 space-y-3">
           {enrollToken ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-sm font-medium text-emerald-400">Worker created!</p>
-              <p className="text-xs text-muted-foreground">Run the worker binary with this enrollment token:</p>
-              <code className="block px-3 py-2 rounded bg-[#0a0a0c] text-xs font-mono text-zinc-300 overflow-auto">
-                croncontrol-worker --url https://your-instance --credential {enrollToken}
-              </code>
-              <button onClick={() => setShowCreate(false)} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">1. Download the worker binary</p>
+                <a href="https://github.com/darkspock/croncontrol/releases" target="_blank" rel="noopener"
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  github.com/darkspock/croncontrol/releases →
+                </a>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">2. Run the worker with this enrollment token</p>
+                <code className="block px-3 py-2 rounded bg-[#0a0a0c] text-xs font-mono text-zinc-300 overflow-auto">
+                  croncontrol-worker --url {window.location.origin} --credential {enrollToken}
+                </code>
+              </div>
+
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  The token expires in 1 hour. See the <a href="https://github.com/darkspock/croncontrol/blob/main/docs/guides/worker-setup.md" target="_blank" rel="noopener" className="text-indigo-400 hover:underline">Worker Setup Guide</a> for full instructions.
+                </p>
+              </div>
+
+              <button type="button" onClick={() => setShowCreate(false)} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
             </div>
           ) : (
             <div className="space-y-3">
