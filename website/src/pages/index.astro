@@ -1,0 +1,155 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+const features = [
+  { icon: '⏱', title: 'Cron, Interval & On-Demand', desc: 'Three schedule types with timezone/DST handling, missed-run recovery, and dependency chains.' },
+  { icon: '🌐', title: '4 Execution Methods', desc: 'HTTP, SSH, AWS SSM, and Kubernetes Jobs. Direct or via worker runtime for private networks.' },
+  { icon: '📦', title: 'Durable Queue', desc: 'Database-backed job queue with retry, exponential backoff, replay, batch enqueue, and idempotency keys.' },
+  { icon: '🔄', title: '13-State Run Machine', desc: 'Validated state transitions from pending to completed, with retrying, hung detection, kill, pause, and resume.' },
+  { icon: '💓', title: 'Heartbeat & Progress', desc: 'Long-running tasks report progress. The dashboard and API expose real-time progress bars and messages.' },
+  { icon: '🔔', title: 'Webhook Events', desc: 'HMAC-SHA256 signed delivery for run.*, job.*, worker.*, and usage events. Auto-disable after 20 failures.' },
+  { icon: '🤖', title: 'MCP Server', desc: '15+ tools for AI agents. List processes, trigger runs, enqueue jobs, kill executions — from Claude or any MCP client.' },
+  { icon: '🖥', title: 'CLI + 5 SDKs', desc: 'cronctl with bash/zsh completion. SDKs for PHP, Python, Node.js, Go, and Laravel — all zero-dependency.' },
+  { icon: '📊', title: '19-Page Dashboard', desc: 'Process list, run detail, timeline, queue overview, job attempts, settings, workers, webhooks, admin panel.' },
+]
+
+const stats = [
+  { value: '23,354', label: 'Lines of code', sub: '16K Go · 4K React · 1.8K SQL · 1.2K SDKs' },
+  { value: '398', label: 'Tasks completed', sub: '8 epics, 0 remaining' },
+  { value: '2', label: 'Days to build', sub: 'With Claude Code (Opus)' },
+  { value: '19', label: 'Dashboard pages', sub: 'React 19 + shadcn/ui' },
+  { value: '5', label: 'SDKs shipped', sub: 'PHP, Python, Node, Go, Laravel' },
+  { value: '6', label: 'Bugs caught', sub: 'By AI code review' },
+]
+
+const arch = [
+  { name: 'Planner', desc: 'Materializes future runs from cron expressions' },
+  { name: 'Executor', desc: 'Claims and dispatches runs to execution methods' },
+  { name: 'Queue Processor', desc: 'Claims and executes durable background jobs' },
+  { name: 'Monitor', desc: 'Detects hung runs via heartbeat and execution timeout' },
+  { name: 'Notifier', desc: 'Delivers HMAC-signed webhook events' },
+  { name: 'Cleanup', desc: 'Retention-based deletion of old records' },
+  { name: 'Worker Dispatcher', desc: 'Routes tasks to private-network workers' },
+  { name: 'Metrics Collector', desc: 'Prometheus gauges, counters, and histograms' },
+]
+---
+
+<Layout title="CronControl — Operational Workloads, Under Control">
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="hero-glow absolute inset-0"></div>
+    <div class="grid-bg absolute inset-0"></div>
+
+    <div class="relative mx-auto max-w-4xl px-6 pt-24 pb-20 text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-accent/20 bg-accent/5 text-sm text-accent-light mb-8 badge-shine">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Open Source &middot; MIT License
+      </div>
+
+      <h1 class="font-display text-5xl sm:text-7xl leading-[1.05] tracking-tight">
+        Operational workloads,
+        <br/>
+        <span class="text-accent-light glow-text italic">under control.</span>
+      </h1>
+
+      <p class="mt-6 text-lg sm:text-xl text-muted max-w-2xl mx-auto leading-relaxed">
+        Schedule cron jobs. Process durable queues. Execute across HTTP, SSH, SSM, and Kubernetes.
+        One Go binary. One PostgreSQL database. Zero complexity.
+      </p>
+
+      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="https://github.com/darkspock/croncontrol#quick-start" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20 hover:shadow-accent/30 hover:-translate-y-0.5">
+          Get Started
+        </a>
+        <a href="https://github.com/darkspock/croncontrol" class="group flex items-center gap-2 px-6 py-3 text-sm font-medium text-muted hover:text-text border border-border hover:border-border rounded-xl transition-all hover:-translate-y-0.5">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+
+      <div class="mt-12 inline-flex items-center gap-3 px-5 py-3 rounded-xl bg-[#0a0a0c] border border-border-subtle font-mono text-sm text-muted">
+        <span class="text-dim select-none">$</span>
+        <code class="text-accent-light">docker compose up -d && go run .</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="mx-auto max-w-6xl px-6 py-24">
+    <div class="text-center mb-16 reveal">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Capabilities</p>
+      <h2 class="font-display text-3xl sm:text-4xl tracking-tight">Everything you need to run<br/><span class="italic text-accent-light">operational workloads</span></h2>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {features.map((f, i) => (
+        <div class="reveal group p-6 rounded-2xl border border-border-subtle bg-raised/50 hover:bg-raised hover:border-border transition-all duration-300" style={`transition-delay: ${i * 60}ms`}>
+          <div class="text-2xl mb-3">{f.icon}</div>
+          <h3 class="text-sm font-semibold mb-1.5">{f.title}</h3>
+          <p class="text-sm text-dim leading-relaxed">{f.desc}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="mx-auto max-w-6xl px-6 py-24">
+    <div class="reveal text-center mb-16">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Architecture</p>
+      <h2 class="font-display text-3xl sm:text-4xl tracking-tight">Eight background components,<br/><span class="italic text-accent-light">one binary</span></h2>
+      <p class="mt-4 text-muted max-w-xl mx-auto">Go 1.24 &middot; chi router &middot; pgx/v5 &middot; SQLC &middot; PostgreSQL 16 &middot; React 19 &middot; Vite &middot; Tailwind 4</p>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {arch.map((a, i) => (
+        <div class="reveal p-4 rounded-xl border border-border-subtle bg-[#0a0a0c] hover:border-accent/20 transition-colors" style={`transition-delay: ${i * 80}ms`}>
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-2 h-2 rounded-full bg-emerald"></div>
+            <span class="text-xs font-mono font-medium text-accent-light">{a.name}</span>
+          </div>
+          <p class="text-xs text-dim leading-relaxed">{a.desc}</p>
+        </div>
+      ))}
+    </div>
+
+    <div class="reveal mt-8 p-6 rounded-2xl border border-accent/10 bg-accent/[0.03] text-center">
+      <p class="text-sm text-muted">
+        Compiled to a <span class="text-text font-medium">single static binary</span> with
+        <span class="text-accent-light font-mono text-xs">go:embed</span> frontend.
+        Deploy anywhere: bare metal, Docker, Kubernetes. Just add PostgreSQL.
+      </p>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section class="mx-auto max-w-6xl px-6 py-24">
+    <div class="reveal text-center mb-16">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">By the numbers</p>
+      <h2 class="font-display text-3xl sm:text-4xl tracking-tight">Built in 2 days.<br/><span class="italic text-accent-light">Shipping on day 1.</span></h2>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      {stats.map((s, i) => (
+        <div class="reveal p-6 rounded-2xl border border-border-subtle bg-raised/30 text-center" style={`transition-delay: ${i * 80}ms`}>
+          <div class="text-3xl sm:text-4xl font-display text-accent-light tracking-tight">{s.value}</div>
+          <div class="text-sm font-medium mt-2">{s.label}</div>
+          <div class="text-xs text-dim mt-1">{s.sub}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="mx-auto max-w-3xl px-6 py-24 text-center reveal">
+    <h2 class="font-display text-3xl sm:text-5xl tracking-tight">Ready to take<br/><span class="italic text-accent-light glow-text">control?</span></h2>
+    <p class="mt-4 text-muted">Deploy in under a minute. Self-hosted, open source, MIT licensed.</p>
+    <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="https://github.com/darkspock/croncontrol#quick-start" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+        Get Started
+      </a>
+      <a href="/contact" class="px-6 py-3 text-sm text-muted hover:text-text border border-border hover:border-accent/30 rounded-xl transition-all">
+        Contact Us
+      </a>
+    </div>
+  </section>
+</Layout>

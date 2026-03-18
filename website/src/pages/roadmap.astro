@@ -1,0 +1,69 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+const epics = [
+  { id: '01', name: 'Canonical Platform Foundation', status: 'done', desc: 'ID generation, error model, encryption, OpenAPI, schema, config' },
+  { id: '02', name: 'Scheduling & Orchestration Core', status: 'done', desc: 'Planner, 13-state machine, dependencies, recovery, pause/resume' },
+  { id: '03', name: 'Execution Plane & Worker Runtime', status: 'done', desc: 'HTTP, SSH, SSM, K8s executors + worker dispatch + enrollment' },
+  { id: '04', name: 'Durable Queue & Replay', status: 'done', desc: 'Queue processor, retry, replay, batch enqueue, idempotency' },
+  { id: '05', name: 'Multi-workspace Identity & Access', status: 'done', desc: 'OAuth, RBAC, email verification, password reset, invitations' },
+  { id: '06', name: 'Observability, Alerts & Lifecycle', status: 'done', desc: 'Heartbeat, webhooks, Prometheus, 3 logging backends, cleanup' },
+  { id: '07', name: 'Dashboard & Admin Experience', status: 'done', desc: '19 pages, onboarding, workspace switcher, command palette' },
+  { id: '08', name: 'Agentic API, MCP, CLI & SDKs', status: 'done', desc: 'OpenAPI, MCP server, cronctl, 5 SDKs, 4 guides' },
+]
+
+const milestones = [
+  { name: 'A: Canonical Core', epics: ['01', '02'], status: 'Done' },
+  { name: 'B: Execution & Processing', epics: ['03', '04'], status: 'Done' },
+  { name: 'C: SaaS Productization', epics: ['05', '06', '07'], status: 'Done' },
+  { name: 'D: Agentic Distribution', epics: ['08'], status: 'Done' },
+]
+---
+
+<Layout title="Roadmap — CronControl">
+  <section class="mx-auto max-w-4xl px-6 pt-24 pb-16 text-center">
+    <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Roadmap</p>
+    <h1 class="font-display text-4xl sm:text-5xl tracking-tight">
+      8 epics. 398 tasks.<br/>
+      <span class="italic text-accent-light">All done.</span>
+    </h1>
+    <p class="mt-4 text-muted">Every epic is at 100%. Zero open tasks across the entire roadmap.</p>
+  </section>
+
+  <!-- Milestones -->
+  <section class="mx-auto max-w-3xl px-6 pb-16">
+    <div class="grid sm:grid-cols-2 gap-3">
+      {milestones.map(m => (
+        <div class="p-4 rounded-xl border border-emerald/20 bg-emerald/[0.03]">
+          <div class="flex items-center gap-2 mb-1">
+            <div class="w-2 h-2 rounded-full bg-emerald"></div>
+            <span class="text-xs font-mono text-emerald">{m.status}</span>
+          </div>
+          <h3 class="text-sm font-semibold">Milestone {m.name}</h3>
+          <p class="text-xs text-dim mt-1">EPICs {m.epics.join(', ')}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Epics -->
+  <section class="mx-auto max-w-4xl px-6 py-16">
+    <h2 class="font-display text-2xl tracking-tight mb-8 text-center">Epic <span class="italic text-accent-light">detail</span></h2>
+    <div class="space-y-3">
+      {epics.map((e, i) => (
+        <div class="reveal flex items-start gap-4 p-5 rounded-xl border border-border-subtle bg-raised/30 hover:border-emerald/20 transition-colors" style={`transition-delay: ${i * 60}ms`}>
+          <div class="w-10 h-10 rounded-lg bg-emerald/10 flex items-center justify-center flex-shrink-0">
+            <span class="text-xs font-mono font-medium text-emerald">{e.id}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold truncate">{e.name}</h3>
+              <span class="px-2 py-0.5 rounded-full bg-emerald/10 text-emerald text-[10px] font-medium flex-shrink-0">100%</span>
+            </div>
+            <p class="text-xs text-dim mt-1">{e.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+</Layout>

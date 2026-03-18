@@ -1,0 +1,46 @@
+services:
+  croncontrol:
+    image: ghcr.io/croncontrol/croncontrol:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${CC_DB_USER:-croncontrol}
+      POSTGRES_PASSWORD: ${CC_DB_PASSWORD:-croncontrol}
+      POSTGRES_DB: ${CC_DB_NAME:-croncontrol}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CC_DB_USER:-croncontrol}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    profiles: ["opensearch"]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  osdata:

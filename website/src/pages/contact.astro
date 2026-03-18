@@ -1,0 +1,47 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="Contact — CronControl">
+  <section class="mx-auto max-w-2xl px-6 pt-24 pb-16 text-center">
+    <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Contact</p>
+    <h1 class="font-display text-4xl sm:text-5xl tracking-tight">
+      Get in <span class="italic text-accent-light">touch</span>
+    </h1>
+    <p class="mt-4 text-muted">Questions, feedback, enterprise inquiries — we'd love to hear from you.</p>
+  </section>
+
+  <section class="mx-auto max-w-lg px-6 pb-24">
+    <form class="space-y-4 p-6 rounded-2xl border border-border-subtle bg-raised/30">
+      <div>
+        <label for="name" class="block text-xs font-medium text-muted mb-1.5">Name</label>
+        <input type="text" id="name" name="name" required
+          class="w-full px-4 py-2.5 rounded-xl border border-border-subtle bg-[#0a0a0c] text-sm text-text placeholder:text-dim focus:outline-none focus:border-accent/40 transition-colors"
+          placeholder="Your name" />
+      </div>
+      <div>
+        <label for="email" class="block text-xs font-medium text-muted mb-1.5">Email</label>
+        <input type="email" id="email" name="email" required
+          class="w-full px-4 py-2.5 rounded-xl border border-border-subtle bg-[#0a0a0c] text-sm text-text placeholder:text-dim focus:outline-none focus:border-accent/40 transition-colors"
+          placeholder="you@company.com" />
+      </div>
+      <div>
+        <label for="message" class="block text-xs font-medium text-muted mb-1.5">Message</label>
+        <textarea id="message" name="message" rows="5" required
+          class="w-full px-4 py-2.5 rounded-xl border border-border-subtle bg-[#0a0a0c] text-sm text-text placeholder:text-dim focus:outline-none focus:border-accent/40 transition-colors resize-none"
+          placeholder="Tell us what you need..."></textarea>
+      </div>
+      <button type="submit" class="w-full px-4 py-2.5 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-lg shadow-accent/20">
+        Send Message
+      </button>
+    </form>
+
+    <div class="mt-8 flex items-center justify-center gap-6 text-sm text-dim">
+      <a href="https://github.com/darkspock/croncontrol/issues" class="hover:text-text transition-colors">GitHub Issues</a>
+      <span class="text-border">|</span>
+      <a href="https://github.com/darkspock/croncontrol/discussions" class="hover:text-text transition-colors">Discussions</a>
+      <span class="text-border">|</span>
+      <a href="https://x.com/croncontrol" class="hover:text-text transition-colors">X / Twitter</a>
+    </div>
+  </section>
+</Layout>

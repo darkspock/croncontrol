@@ -1,0 +1,58 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="Open Source — CronControl">
+  <section class="mx-auto max-w-4xl px-6 pt-24 pb-16 text-center">
+    <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Open Source</p>
+    <h1 class="font-display text-4xl sm:text-5xl tracking-tight">
+      MIT licensed.<br/>
+      <span class="italic text-accent-light">Deploy anywhere.</span>
+    </h1>
+    <p class="mt-6 text-lg text-muted max-w-2xl mx-auto">
+      The entire codebase is open. Fork it, extend it, self-host it, learn from it.
+      No feature gates, no telemetry, no vendor lock-in.
+    </p>
+  </section>
+
+  <!-- Quick start -->
+  <section class="mx-auto max-w-3xl px-6 pb-16">
+    <div class="p-6 rounded-2xl bg-[#0a0a0c] border border-border-subtle">
+      <h2 class="text-sm font-semibold mb-4">Quick Start</h2>
+      <div class="space-y-2 font-mono text-sm">
+        <div class="flex gap-3"><span class="text-dim select-none w-4">1</span><code class="text-muted">git clone https://github.com/darkspock/croncontrol.git</code></div>
+        <div class="flex gap-3"><span class="text-dim select-none w-4">2</span><code class="text-muted">cd croncontrol</code></div>
+        <div class="flex gap-3"><span class="text-dim select-none w-4">3</span><code class="text-accent-light">make start</code></div>
+      </div>
+      <p class="mt-4 text-xs text-dim">Starts PostgreSQL via Docker Compose, applies migrations, and runs the server on :8090.</p>
+    </div>
+  </section>
+
+  <!-- Stack -->
+  <section class="mx-auto max-w-4xl px-6 py-16">
+    <h2 class="font-display text-2xl tracking-tight mb-8 text-center">Tech <span class="italic text-accent-light">stack</span></h2>
+    <div class="grid sm:grid-cols-2 gap-4">
+      {[
+        { title: 'Backend', items: 'Go 1.24 · chi · pgx/v5 · SQLC · bcrypt · AES-256-GCM' },
+        { title: 'Frontend', items: 'React 19 · TypeScript · Vite · Tailwind CSS 4 · shadcn/ui · TanStack Query' },
+        { title: 'Database', items: 'PostgreSQL 16 · 19 tables · SKIP LOCKED · ULID primary keys · prefix+ULID IDs' },
+        { title: 'Distribution', items: 'Single binary (go:embed) · Docker · GoReleaser · 4 binaries (server, worker, CLI, MCP)' },
+      ].map(s => (
+        <div class="p-5 rounded-xl border border-border-subtle bg-raised/30">
+          <h3 class="text-sm font-semibold mb-2">{s.title}</h3>
+          <p class="text-sm text-dim">{s.items}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Contributing -->
+  <section class="mx-auto max-w-3xl px-6 py-16 text-center reveal">
+    <h2 class="font-display text-2xl tracking-tight mb-4">Contributing</h2>
+    <p class="text-muted mb-8">Issues, PRs, and discussions are welcome on GitHub. Start by reading the docs/ directory for architecture context.</p>
+    <a href="https://github.com/darkspock/croncontrol" class="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      View on GitHub
+    </a>
+  </section>
+</Layout>

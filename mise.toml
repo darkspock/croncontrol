@@ -1,0 +1,11 @@
+[tools]
+go = "latest"
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "latest"
+"go:github.com/sqlc-dev/sqlc/cmd/sqlc" = "latest"
+"go:github.com/air-verse/air" = "latest"
+"go:github.com/goreleaser/goreleaser/v2" = "latest"
+just = "latest"
+"pipx:pre-commit" = "latest"
+
+[tools.atlas]
+version = "latest"

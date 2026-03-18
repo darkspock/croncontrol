@@ -1,0 +1,53 @@
+# Go
+/croncontrol
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Generated
+internal/api/api.gen.go
+db/generated/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Docker
+pgdata/
+osdata/
+
+# Coverage
+coverage.out
+coverage.html
+
+# Air
+tmp/
+
+# Atlas
+*.sqlite

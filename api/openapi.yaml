@@ -1,0 +1,1875 @@
+openapi: "3.0.3"
+info:
+  title: CronControl API
+  description: |
+    Control plane for scheduled and event-driven operational workloads.
+    API-first, agentic-ready. Uses canonical terminology: workspace, process, run, queue, job, worker.
+  version: "1.0.0"
+
+servers:
+  - url: /api/v1
+
+security:
+  - ApiKeyAuth: []
+  - CookieAuth: []
+
+paths:
+  # =========================================================================
+  # HEALTH (no auth)
+  # =========================================================================
+  /health:
+    get:
+      operationId: getHealth
+      summary: Basic health check
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # =========================================================================
+  # REGISTRATION (no auth)
+  # =========================================================================
+  /register:
+    post:
+      operationId: register
+      summary: Register a new workspace
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /register/verify:
+    post:
+      operationId: verifyEmail
+      summary: Verify email address
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Email verified
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # =========================================================================
+  # HEARTBEAT (no auth — implicit via run ID)
+  # =========================================================================
+  /heartbeat:
+    post:
+      operationId: sendHeartbeat
+      summary: Report heartbeat and progress (non-HTTP methods only)
+      tags: [Heartbeat]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: Heartbeat recorded
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # WORKSPACE
+  # =========================================================================
+  /workspace:
+    get:
+      operationId: getWorkspace
+      summary: Get current workspace info
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Workspace details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Workspace"
+    put:
+      operationId: updateWorkspace
+      summary: Update workspace settings (admin)
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceRequest"
+      responses:
+        "200":
+          description: Workspace updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Workspace"
+
+  /workspace/health:
+    get:
+      operationId: getWorkspaceHealth
+      summary: Workspace-scoped health and usage
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Workspace health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceHealthResponse"
+
+  # =========================================================================
+  # PROCESSES
+  # =========================================================================
+  /processes:
+    get:
+      operationId: listProcesses
+      summary: List processes
+      tags: [Processes]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: schedule_type
+          in: query
+          schema:
+            type: string
+            enum: [cron, fixed_delay, on_demand]
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+        - name: tag
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Process list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Process"
+    post:
+      operationId: createProcess
+      summary: Create a process (admin)
+      tags: [Processes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcessRequest"
+      responses:
+        "201":
+          description: Process created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Process"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /processes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getProcess
+      summary: Get process details
+      tags: [Processes]
+      responses:
+        "200":
+          description: Process details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Process"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateProcess
+      summary: Update a process (admin)
+      tags: [Processes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcessRequest"
+      responses:
+        "200":
+          description: Process updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Process"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProcess
+      summary: Delete a process (admin)
+      tags: [Processes]
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /processes/{id}/trigger:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: triggerProcess
+      summary: Manually trigger a process (operator)
+      tags: [Processes]
+      responses:
+        "201":
+          description: Run created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /processes/{id}/pause:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: pauseProcess
+      summary: Pause scheduling (operator)
+      tags: [Processes]
+      parameters:
+        - name: cancel_pending
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Paused
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /processes/{id}/resume:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: resumeProcess
+      summary: Resume scheduling (operator)
+      tags: [Processes]
+      responses:
+        "200":
+          description: Resumed
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # RUNS
+  # =========================================================================
+  /runs:
+    get:
+      operationId: listRuns
+      summary: List runs
+      tags: [Runs]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: process_id
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: origin
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Run"
+    post:
+      operationId: createRun
+      summary: Schedule a one-time run (operator)
+      tags: [Runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRunRequest"
+      responses:
+        "201":
+          description: Run scheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Run"
+
+  /runs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getRun
+      summary: Get run details with attempts
+      tags: [Runs]
+      responses:
+        "200":
+          description: Run details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_RunDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/kill:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: killRun
+      summary: Kill a running execution (operator)
+      tags: [Runs]
+      responses:
+        "200":
+          description: Kill requested
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: cancelRun
+      summary: Cancel a pending/queued run (operator)
+      tags: [Runs]
+      responses:
+        "200":
+          description: Cancelled
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/replay:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: replayRun
+      summary: Replay a terminal run (operator)
+      tags: [Runs]
+      responses:
+        "201":
+          description: Replay run created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Run"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runs/{id}/output:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getRunOutput
+      summary: Get run stdout/stderr
+      tags: [Runs]
+      parameters:
+        - name: stream
+          in: query
+          schema:
+            type: string
+            enum: [stdout, stderr]
+      responses:
+        "200":
+          description: Output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunOutputResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # QUEUES
+  # =========================================================================
+  /queues:
+    get:
+      operationId: listQueues
+      summary: List queues
+      tags: [Queues]
+      responses:
+        "200":
+          description: Queue list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Queue"
+    post:
+      operationId: createQueue
+      summary: Create a queue (admin)
+      tags: [Queues]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQueueRequest"
+      responses:
+        "201":
+          description: Queue created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Queue"
+
+  /queues/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getQueue
+      summary: Get queue details with stats
+      tags: [Queues]
+      responses:
+        "200":
+          description: Queue details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_QueueDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateQueue
+      summary: Update queue (admin)
+      tags: [Queues]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQueueRequest"
+      responses:
+        "200":
+          description: Queue updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Queue"
+    delete:
+      operationId: deleteQueue
+      summary: Delete queue (admin)
+      tags: [Queues]
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # JOBS
+  # =========================================================================
+  /jobs:
+    get:
+      operationId: listJobs
+      summary: List jobs
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+        - name: queue_id
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: reference
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Job"
+    post:
+      operationId: enqueueJob
+      summary: Enqueue a job (operator)
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnqueueJobRequest"
+      responses:
+        "201":
+          description: Job enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Job"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /jobs/batch:
+    post:
+      operationId: enqueueJobBatch
+      summary: Enqueue multiple jobs atomically (operator)
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobs]
+              properties:
+                jobs:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/EnqueueJobRequest"
+      responses:
+        "201":
+          description: Jobs enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Job"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /jobs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getJob
+      summary: Get job with attempt history
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_JobDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: cancelJob
+      summary: Cancel a pending/retrying job (operator)
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Cancelled
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs/{id}/replay:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: replayJob
+      summary: Replay a terminal job (operator)
+      tags: [Jobs]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayJobRequest"
+      responses:
+        "201":
+          description: Replay job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Job"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # WORKERS (admin)
+  # =========================================================================
+  /workers:
+    get:
+      operationId: listWorkers
+      summary: List workers (admin)
+      tags: [Workers]
+      responses:
+        "200":
+          description: Worker list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Worker"
+    post:
+      operationId: createWorker
+      summary: Create a worker and get enrollment token (admin)
+      tags: [Workers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkerRequest"
+      responses:
+        "201":
+          description: Worker created with enrollment token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerEnrollmentResponse"
+
+  /workers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getWorker
+      summary: Get worker details (admin)
+      tags: [Workers]
+      responses:
+        "200":
+          description: Worker details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Worker"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateWorker
+      summary: Update worker labels/settings (admin)
+      tags: [Workers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkerRequest"
+      responses:
+        "200":
+          description: Worker updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_Worker"
+    delete:
+      operationId: deleteWorker
+      summary: Delete a worker (admin)
+      tags: [Workers]
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =========================================================================
+  # WEBHOOK SUBSCRIPTIONS (admin)
+  # =========================================================================
+  /webhook-subscriptions:
+    get:
+      operationId: listWebhookSubscriptions
+      summary: List webhook subscriptions (admin)
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Subscription list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_WebhookSubscription"
+    post:
+      operationId: createWebhookSubscription
+      summary: Create webhook subscription (admin)
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookSubscriptionRequest"
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_WebhookSubscription"
+
+  /webhook-subscriptions/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: testWebhookSubscription
+      summary: Send a test delivery (admin)
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Test delivered
+
+  # =========================================================================
+  # API KEYS (admin)
+  # =========================================================================
+  /api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys (admin)
+      tags: [Auth]
+      responses:
+        "200":
+          description: Key list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_ApiKey"
+    post:
+      operationId: createApiKey
+      summary: Create API key (admin)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: Key created (raw key shown once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyCreatedResponse"
+
+  /api-keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    delete:
+      operationId: deleteApiKey
+      summary: Revoke API key (admin)
+      tags: [Auth]
+      responses:
+        "204":
+          description: Revoked
+
+  # =========================================================================
+  # CREDENTIALS (admin)
+  # =========================================================================
+  /ssh-credentials:
+    get:
+      operationId: listSshCredentials
+      summary: List SSH credentials (admin)
+      tags: [Credentials]
+      responses:
+        "200":
+          description: Credential list (no private keys)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_SshCredential"
+    post:
+      operationId: createSshCredential
+      summary: Upload SSH credential (admin)
+      tags: [Credentials]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSshCredentialRequest"
+      responses:
+        "201":
+          description: Credential created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SingleResponse_SshCredential"
+
+  /ssh-credentials/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    delete:
+      operationId: deleteSshCredential
+      summary: Delete SSH credential (admin)
+      tags: [Credentials]
+      responses:
+        "204":
+          description: Deleted
+
+  # =========================================================================
+  # USERS & MEMBERSHIPS (admin)
+  # =========================================================================
+  /users:
+    get:
+      operationId: listUsers
+      summary: List workspace members (admin)
+      tags: [Users]
+      responses:
+        "200":
+          description: Member list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResponse_Member"
+
+  /users/invite:
+    post:
+      operationId: inviteUser
+      summary: Invite a user to workspace (admin)
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, operator, viewer]
+      responses:
+        "201":
+          description: Invitation sent
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /users/{id}/role:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    put:
+      operationId: updateUserRole
+      summary: Change user role (admin)
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, operator, viewer]
+      responses:
+        "200":
+          description: Role updated
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+
+  parameters:
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Prefixed ULID (e.g., prc_01HYX...)
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: Rate limit exceeded (429)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    # === Envelopes ===
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            hint:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+    Meta:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+
+    # === Health ===
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        time:
+          type: string
+          format: date-time
+
+    WorkspaceHealthResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            scheduler:
+              type: object
+              properties:
+                total_processes:
+                  type: integer
+                running_runs:
+                  type: integer
+                pending_runs:
+                  type: integer
+                failed_24h:
+                  type: integer
+            queue:
+              type: object
+              properties:
+                total_queues:
+                  type: integer
+                running_jobs:
+                  type: integer
+                pending_jobs:
+                  type: integer
+                failed_24h:
+                  type: integer
+
+    # === Auth ===
+    RegisterRequest:
+      type: object
+      required: [email, name]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+          minLength: 12
+
+    RegisterResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            workspace:
+              type: object
+              properties:
+                id:
+                  type: string
+                slug:
+                  type: string
+            user:
+              type: object
+              properties:
+                id:
+                  type: string
+                email:
+                  type: string
+                role:
+                  type: string
+            api_key:
+              type: string
+              description: Shown once. Save immediately.
+            email_verified:
+              type: boolean
+            hint:
+              type: string
+
+    HeartbeatRequest:
+      type: object
+      required: [run_id, current]
+      properties:
+        run_id:
+          type: string
+        total:
+          type: integer
+        current:
+          type: integer
+        message:
+          type: string
+
+    # === Workspace ===
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        state:
+          type: string
+          enum: [active, suspended, archived]
+        default_timezone:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Workspace:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Workspace"
+
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        default_timezone:
+          type: string
+
+    # === Process ===
+    Process:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        schedule_type:
+          type: string
+          enum: [cron, fixed_delay, on_demand]
+        schedule:
+          type: string
+        delay_duration:
+          type: string
+        timezone:
+          type: string
+        execution_method:
+          type: string
+          enum: [http, ssh, ssm, k8s]
+        runtime:
+          type: string
+          enum: [direct, worker]
+        method_config:
+          type: object
+        max_attempts:
+          type: integer
+        retry_backoff:
+          type: string
+        enabled:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        depends_on_process_id:
+          type: string
+        dependency_type:
+          type: string
+          enum: [after, after_success]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Process:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Process"
+
+    ListResponse_Process:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Process"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateProcessRequest:
+      type: object
+      required: [name, schedule_type, execution_method]
+      properties:
+        name:
+          type: string
+        schedule_type:
+          type: string
+          enum: [cron, fixed_delay, on_demand]
+        schedule:
+          type: string
+        delay_duration:
+          type: string
+        timezone:
+          type: string
+        execution_method:
+          type: string
+          enum: [http, ssh, ssm, k8s]
+        runtime:
+          type: string
+          enum: [direct, worker]
+          default: direct
+        method_config:
+          type: object
+        max_attempts:
+          type: integer
+          default: 1
+        retry_backoff:
+          type: string
+        execution_timeout:
+          type: string
+          default: "1h"
+        heartbeat_timeout:
+          type: string
+        timeout_action:
+          type: string
+          enum: [kill, alert, both]
+          default: both
+        allow_parallel:
+          type: boolean
+          default: false
+        max_parallel:
+          type: integer
+          default: 1
+        on_overlap:
+          type: string
+          enum: [skip, queue]
+          default: skip
+        miss_policy:
+          type: string
+          enum: [execute, skip]
+          default: skip
+        ssh_credential_id:
+          type: string
+        ssm_profile_id:
+          type: string
+        k8s_cluster_id:
+          type: string
+        worker_id:
+          type: string
+        depends_on_process_id:
+          type: string
+        dependency_type:
+          type: string
+          enum: [after, after_success]
+        environment:
+          type: object
+        tags:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+          default: true
+
+    # === Run ===
+    Run:
+      type: object
+      properties:
+        id:
+          type: string
+        process_id:
+          type: string
+        process_name:
+          type: string
+        scheduled_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+        origin:
+          type: string
+        attempt:
+          type: integer
+        max_attempts:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        exit_code:
+          type: integer
+        progress_total:
+          type: integer
+        progress_current:
+          type: integer
+        progress:
+          type: integer
+        progress_message:
+          type: string
+        execution_method:
+          type: string
+        runtime:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Run:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Run"
+
+    SingleResponse_RunDetail:
+      type: object
+      properties:
+        data:
+          allOf:
+            - $ref: "#/components/schemas/Run"
+            - type: object
+              properties:
+                attempts:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RunAttempt"
+
+    ListResponse_Run:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Run"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateRunRequest:
+      type: object
+      required: [process_id, scheduled_at]
+      properties:
+        process_id:
+          type: string
+        scheduled_at:
+          type: string
+          format: date-time
+
+    RunAttempt:
+      type: object
+      properties:
+        id:
+          type: string
+        attempt_number:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        exit_code:
+          type: integer
+        error_message:
+          type: string
+
+    RunOutputResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              stream:
+                type: string
+              content:
+                type: string
+              truncated:
+                type: boolean
+              created_at:
+                type: string
+                format: date-time
+
+    # === Queue ===
+    Queue:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        execution_method:
+          type: string
+        runtime:
+          type: string
+        concurrency:
+          type: integer
+        max_attempts:
+          type: integer
+        enabled:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Queue:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Queue"
+
+    SingleResponse_QueueDetail:
+      type: object
+      properties:
+        data:
+          allOf:
+            - $ref: "#/components/schemas/Queue"
+            - type: object
+              properties:
+                stats:
+                  type: object
+                  properties:
+                    pending:
+                      type: integer
+                    running:
+                      type: integer
+                    retrying:
+                      type: integer
+                    failed_24h:
+                      type: integer
+                    completed_24h:
+                      type: integer
+
+    ListResponse_Queue:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Queue"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateQueueRequest:
+      type: object
+      required: [name, execution_method]
+      properties:
+        name:
+          type: string
+        execution_method:
+          type: string
+          enum: [http, ssh, ssm, k8s]
+        runtime:
+          type: string
+          enum: [direct, worker]
+          default: direct
+        method_config:
+          type: object
+        concurrency:
+          type: integer
+          default: 1
+        max_attempts:
+          type: integer
+          default: 3
+        retry_backoff:
+          type: string
+          default: "1m,5m,15m,1h"
+        job_timeout:
+          type: string
+          default: "5m"
+        tags:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+          default: true
+
+    # === Job ===
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        queue_id:
+          type: string
+        queue_name:
+          type: string
+        state:
+          type: string
+        priority:
+          type: integer
+        attempt:
+          type: integer
+        reference:
+          type: string
+        scheduled_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Job:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Job"
+
+    SingleResponse_JobDetail:
+      type: object
+      properties:
+        data:
+          allOf:
+            - $ref: "#/components/schemas/Job"
+            - type: object
+              properties:
+                payload:
+                  type: object
+                attempts:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/JobAttempt"
+
+    ListResponse_Job:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    EnqueueJobRequest:
+      type: object
+      required: [queue_id, payload]
+      properties:
+        queue_id:
+          type: string
+        payload:
+          type: object
+        priority:
+          type: integer
+          default: 0
+        scheduled_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        reference:
+          type: string
+        idempotency_key:
+          type: string
+
+    ReplayJobRequest:
+      type: object
+      properties:
+        payload:
+          type: object
+        priority:
+          type: integer
+
+    JobAttempt:
+      type: object
+      properties:
+        id:
+          type: string
+        attempt_number:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        response_code:
+          type: integer
+        error_message:
+          type: string
+        truncated:
+          type: boolean
+
+    # === Worker ===
+    Worker:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [online, offline, unhealthy]
+        labels:
+          type: object
+        capabilities:
+          type: object
+        max_concurrency:
+          type: integer
+        version:
+          type: string
+        enabled:
+          type: boolean
+        last_heartbeat_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_Worker:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Worker"
+
+    ListResponse_Worker:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Worker"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateWorkerRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        labels:
+          type: object
+        max_concurrency:
+          type: integer
+          default: 5
+
+    UpdateWorkerRequest:
+      type: object
+      properties:
+        labels:
+          type: object
+        enabled:
+          type: boolean
+
+    WorkerEnrollmentResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            worker:
+              $ref: "#/components/schemas/Worker"
+            enrollment_token:
+              type: string
+              description: Temporary token for worker enrollment. Use once.
+
+    # === Webhook ===
+    WebhookSubscription:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        event_types:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        consecutive_failures:
+          type: integer
+        auto_disabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_WebhookSubscription:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/WebhookSubscription"
+
+    ListResponse_WebhookSubscription:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookSubscription"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateWebhookSubscriptionRequest:
+      type: object
+      required: [url, event_types]
+      properties:
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+
+    # === API Key ===
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        key_prefix:
+          type: string
+        role:
+          type: string
+        last_used_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ListResponse_ApiKey:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKey"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateApiKeyRequest:
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, operator, viewer]
+        expires_at:
+          type: string
+          format: date-time
+
+    ApiKeyCreatedResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            role:
+              type: string
+            key:
+              type: string
+              description: Full API key. Shown once. Save immediately.
+
+    # === Credentials ===
+    SshCredential:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        fingerprint:
+          type: string
+        username:
+          type: string
+        port:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    SingleResponse_SshCredential:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/SshCredential"
+
+    ListResponse_SshCredential:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SshCredential"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    CreateSshCredentialRequest:
+      type: object
+      required: [name, private_key]
+      properties:
+        name:
+          type: string
+        private_key:
+          type: string
+          description: PEM-encoded private key (will be encrypted at rest)
+        username:
+          type: string
+        port:
+          type: integer
+          default: 22
+
+    # === Members ===
+    Member:
+      type: object
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, operator, viewer]
+        last_login_at:
+          type: string
+          format: date-time
+
+    ListResponse_Member:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        meta:
+          $ref: "#/components/schemas/Meta"

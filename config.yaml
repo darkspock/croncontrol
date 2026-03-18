@@ -1,0 +1,58 @@
+server:
+  port: 8090
+
+database:
+  host: localhost
+  port: 5435
+  user: croncontrol
+  password: croncontrol
+  name: croncontrol
+  sslmode: disable
+
+planner:
+  interval: 1h
+  horizon: 24h
+
+executor:
+  interval: 30s
+
+monitor:
+  interval: 30s
+
+concurrency:
+  max_global: 50
+  max_http: 20
+  max_ssh: 5
+  max_ssm: 10
+  max_k8s: 20
+
+auth:
+  session_secret: dev-session-secret-change-in-prod
+  encryption_key: dev-encryption-key-32bytes!!!!
+
+retention:
+  slots: 30d
+  output: 30d
+  heartbeats: 30d
+  jobs: 30d
+  job_attempts: 30d
+  audit: 90d
+  cleanup_schedule: "03:00"
+  cleanup_batch_size: 1000
+
+logging:
+  # backend: database | file | opensearch
+  backend: database
+  level: info
+  # File backend options:
+  # file_path: ./data/logs
+  # OpenSearch backend options:
+  # opensearch_url: http://localhost:9200
+  # opensearch_auth: admin:admin
+
+saas:
+  registration_enabled: true
+  disposable_email_check: true
+  base_url: http://localhost:8090
+  # Bootstrap a platform admin on startup (set email of the admin user):
+  # platform_admin_email: admin@example.com

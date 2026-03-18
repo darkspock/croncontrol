@@ -1,0 +1,14 @@
+{
+  "name": "@croncontrol/sdk",
+  "version": "0.1.0",
+  "description": "CronControl Node.js SDK — thin wrapper around the REST API",
+  "main": "croncontrol.js",
+  "exports": {
+    ".": "./croncontrol.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["croncontrol", "cron", "scheduler", "job-queue"],
+  "license": "MIT"
+}
