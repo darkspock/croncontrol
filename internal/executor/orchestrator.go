@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -267,6 +268,31 @@ func (o *Orchestrator) dispatch(ctx context.Context, run db.Run) {
 	if result.Error != nil {
 		s := result.Error.Error()
 		errMsg = &s
+	} else if !result.IsSuccess() {
+		// No explicit error but execution failed (e.g., HTTP non-2xx, non-zero exit)
+		var msg string
+		if result.ResponseCode != nil {
+			msg = fmt.Sprintf("HTTP %d", *result.ResponseCode)
+			if result.ResponseBody != "" {
+				body := result.ResponseBody
+				if len(body) > 200 {
+					body = body[:200] + "..."
+				}
+				msg += ": " + body
+			}
+		} else if result.ExitCode != nil {
+			msg = fmt.Sprintf("exit code %d", *result.ExitCode)
+			if result.Stderr != "" {
+				stderr := result.Stderr
+				if len(stderr) > 200 {
+					stderr = stderr[:200] + "..."
+				}
+				msg += ": " + stderr
+			}
+		} else {
+			msg = "execution failed (unknown reason)"
+		}
+		errMsg = &msg
 	}
 	o.queries.FinishRunAttempt(ctx, db.FinishRunAttemptParams{
 		ID:           attemptID,
