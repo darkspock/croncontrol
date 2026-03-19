@@ -24,8 +24,12 @@
       </button>
     </div>
     <div id="chat-messages" class="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 text-[11px] leading-relaxed scrollbar-thin"></div>
-    <div class="px-3 py-2 border-t border-zinc-800/50">
-      <p class="text-[10px] text-zinc-600 text-center">Simulated conversation · Powered by Groq</p>
+    <div class="px-3 py-2 border-t border-zinc-800/50 space-y-1.5">
+      <form id="chat-form" class="flex gap-1.5">
+        <input id="chat-input" type="text" placeholder="Talk to this node..." class="flex-1 px-2.5 py-1.5 rounded-md border border-zinc-700/50 bg-zinc-900/50 text-[11px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/40 transition-colors" />
+        <button type="submit" class="px-2.5 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-medium transition-colors">Send</button>
+      </form>
+      <p class="text-[9px] text-zinc-600 text-center">Simulated · Powered by Groq</p>
     </div>
   </div>
 </div>
@@ -42,6 +46,8 @@
   const chatMessages = document.getElementById('chat-messages')!;
   const chatClose = document.getElementById('chat-close')!;
   const chatDot = document.getElementById('chat-dot')!;
+  const chatForm = document.getElementById('chat-form') as HTMLFormElement;
+  const chatInput = document.getElementById('chat-input') as HTMLInputElement;
   if (!canvas) throw new Error('canvas not found');
   const ctx = canvas.getContext('2d')!;
 
@@ -146,6 +152,16 @@
   });
 
   chatClose.addEventListener('click', closeChat);
+
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text || !chatOpen || chatNodeIdx < 0) return;
+    chatInput.value = '';
+    addMessage('director', text);
+    chatHistory.push({ role: 'user', content: text });
+    callGroq();
+  });
 
   // --- Chat ---
   // Chat calls go through the CronControl backend proxy (no API key in frontend)
