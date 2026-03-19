@@ -32,6 +32,7 @@ import (
 	"github.com/croncontrol/croncontrol/internal/id"
 	"github.com/croncontrol/croncontrol/internal/notifier"
 	"github.com/croncontrol/croncontrol/internal/runstate"
+	"github.com/croncontrol/croncontrol/internal/infra"
 	"github.com/croncontrol/croncontrol/internal/storage"
 )
 
@@ -45,6 +46,7 @@ type Service struct {
 	googleAuth     *auth.GoogleAuthenticator
 	artifactStore  storage.Backend
 	encryptionKey  []byte
+	provisioner    *infra.Provisioner
 }
 
 // NewService creates a new handler service.
@@ -65,6 +67,11 @@ func (s *Service) SetArtifactStore(store storage.Backend) {
 // SetEncryptionKey sets the key used for encrypting workspace secrets.
 func (s *Service) SetEncryptionKey(key []byte) {
 	s.encryptionKey = key
+}
+
+// SetProvisioner sets the infrastructure provisioner.
+func (s *Service) SetProvisioner(p *infra.Provisioner) {
+	s.provisioner = p
 }
 
 // ============================================================================
@@ -1773,6 +1780,61 @@ func (s *Service) DeleteK8sCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// ============================================================================
+// Infrastructure (Servers)
+// ============================================================================
+
+func (s *Service) ListInfraServers(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	if s.provisioner == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Infrastructure provisioning not configured", "")
+		return
+	}
+	servers, err := s.provisioner.ListServers(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list servers", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": servers, "meta": map[string]any{"total": len(servers)}})
+}
+
+func (s *Service) ProvisionServer(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	if s.provisioner == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Infrastructure provisioning not configured", "")
+		return
+	}
+	ip, err := s.provisioner.EnsureCapacity(r.Context(), wsID, 1)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to provision server", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": map[string]any{"status": "provisioning", "ip": ip}})
+}
+
+func (s *Service) DestroyInfraServer(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "id")
+	if s.provisioner == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Infrastructure provisioning not configured", "")
+		return
+	}
+	if err := s.provisioner.DestroyServer(r.Context(), serverID); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to destroy server", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "destroying"}})
+}
+
+func (s *Service) ServerReadyCallback(w http.ResponseWriter, r *http.Request) {
+	serverID := chi.URLParam(r, "id")
+	if s.provisioner == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Not configured", "")
+		return
+	}
+	s.provisioner.MarkServerReady(r.Context(), serverID)
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "ready"}})
 }
 
 // ============================================================================

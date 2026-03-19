@@ -331,6 +331,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 		r.Post("/login", svc.Login)
 		r.Post("/heartbeat", svc.Heartbeat)
 		r.Post("/workers/enroll", svc.EnrollWorker)
+		r.Post("/infra/servers/{id}/ready", svc.ServerReadyCallback)
 		r.Post("/register/verify", svc.VerifyEmail)
 		r.Post("/register/resend", svc.ResendVerification)
 		r.Post("/auth/forgot-password", svc.ForgotPassword)
@@ -439,6 +440,11 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 
 			// System (workspace admin)
 			r.Post("/system/cleanup", svc.TriggerCleanup)
+
+			// Infrastructure (servers)
+			r.Get("/infra/servers", svc.ListInfraServers)
+			r.Post("/infra/servers", svc.ProvisionServer)
+			r.Delete("/infra/servers/{id}", svc.DestroyInfraServer)
 
 			// Platform Admin (cross-workspace)
 			r.Route("/admin", func(r chi.Router) {
