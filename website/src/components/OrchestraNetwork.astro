@@ -158,8 +158,8 @@
     const text = chatInput.value.trim();
     if (!text || !chatOpen || chatNodeIdx < 0) return;
     chatInput.value = '';
-    addMessage('director', text);
-    chatHistory.push({ role: 'user', content: text });
+    addMessage('human', text);
+    chatHistory.push({ role: 'user', content: `Human operator: ${text}` });
     callGroq();
   });
 
@@ -201,11 +201,14 @@
     if (chatAbort) { chatAbort.abort(); chatAbort = null; }
   }
 
-  function addMessage(sender: 'director' | 'agent' | 'system', text: string) {
+  function addMessage(sender: 'director' | 'agent' | 'human' | 'system', text: string) {
     const div = document.createElement('div');
     if (sender === 'director') {
       div.className = 'flex gap-2';
       div.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center mt-0.5"><span class="text-[8px] font-bold text-indigo-400">D</span></span><div class="flex-1"><p class="text-[10px] font-semibold text-indigo-400 mb-0.5">Director</p><p class="text-zinc-300">${esc(text)}</p></div>`;
+    } else if (sender === 'human') {
+      div.className = 'flex gap-2';
+      div.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center mt-0.5"><span class="text-[8px] font-bold text-amber-400">H</span></span><div class="flex-1"><p class="text-[10px] font-semibold text-amber-400 mb-0.5">Human</p><p class="text-zinc-300">${esc(text)}</p></div>`;
     } else if (sender === 'agent') {
       const info = nodeInfo[chatNodeIdx];
       div.className = 'flex gap-2';
