@@ -160,7 +160,9 @@
     chatInput.value = '';
     addMessage('human', text);
     chatHistory.push({ role: 'user', content: `Human operator: ${text}` });
-    callGroq();
+    // Pause auto-conversation while human is talking, resume after response
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+    callGroq(true);
   });
 
   // --- Chat ---
@@ -171,6 +173,39 @@
   let chatHistory: { role: string; content: string }[] = [];
   let chatAbort: AbortController | null = null;
   let chatBusy = false;
+  let autoTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoStep = 0;
+  const MAX_AUTO = 10;
+  const BASE_DELAY = 5000; // 5s, then 6s, 7s...
+
+  // Pre-written Director prompts for autonomous conversation
+  const directorPrompts = [
+    (name: string) => `${name}, report your current status.`,
+    (name: string) => `What's your progress percentage?`,
+    (name: string) => `Any errors or warnings to report?`,
+    (name: string) => `How many records have you processed so far?`,
+    (name: string) => `What's your estimated time to completion?`,
+    (name: string) => `Are there any dependencies blocking you?`,
+    (name: string) => `Check your resource usage — CPU and memory.`,
+    (name: string) => `Summarize your output so far.`,
+    (name: string) => `Any anomalies detected in this batch?`,
+    (name: string) => `Wrapping up. Final status before I move to the next AgentNode.`,
+  ];
+
+  function scheduleAutoMessage() {
+    if (autoTimer) clearTimeout(autoTimer);
+    if (autoStep >= MAX_AUTO || !chatOpen || chatNodeIdx < 0) return;
+    const delay = BASE_DELAY + autoStep * 1000; // 5s, 6s, 7s, ...
+    autoTimer = setTimeout(() => {
+      if (!chatOpen || chatNodeIdx < 0 || chatBusy) return;
+      const info = nodeInfo[chatNodeIdx];
+      const prompt = directorPrompts[autoStep](info.name);
+      autoStep++;
+      addMessage('director', prompt);
+      chatHistory.push({ role: 'user', content: `Director: ${prompt}` });
+      callGroq(true);
+    }, delay);
+  }
 
   function openChat(idx: number) {
     chatNodeIdx = idx;
@@ -182,21 +217,20 @@
     chatMessages.innerHTML = '';
     chatHistory = [];
     chatBusy = false;
+    autoStep = 0;
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
     tooltip.style.opacity = '0';
 
     // Initial Director message
-    const directorMsg = idx === 0
-      ? 'Orchestra "product-cleanup" is active. 3 AgentNodes running, 2 idle. Awaiting validator results.'
-      : `${info.name}, report your current status.`;
-
+    const directorMsg = directorPrompts[0](info.name);
+    autoStep = 1;
     addMessage('director', directorMsg);
 
-    // Set up system context and get first response
     chatHistory = [
-      { role: 'system', content: info.context + ' You are in a live orchestra chat. The AI Director just asked for your status. A human operator may also join the conversation. Respond concisely in 1-2 sentences.' },
-      { role: 'user', content: directorMsg },
+      { role: 'system', content: info.context + ' You are in a live orchestra chat. The AI Director coordinates you. A human operator may also join. Always respond in character, concisely in 1-2 sentences. Vary your responses — mention specific numbers, progress, issues.' },
+      { role: 'user', content: `Director: ${directorMsg}` },
     ];
-    callGroq();
+    callGroq(true);
   }
 
   function closeChat() {
@@ -204,6 +238,7 @@
     chatPanel.style.display = 'none';
     chatNodeIdx = -1;
     chatBusy = false;
+    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
     if (chatAbort) { chatAbort.abort(); chatAbort = null; }
   }
 
@@ -229,7 +264,7 @@
 
   function esc(s: string) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  async function callGroq() {
+  async function callGroq(continueAuto = false) {
     if (chatBusy) return;
     chatBusy = true;
     if (chatAbort) chatAbort.abort();
@@ -253,6 +288,8 @@
       const reply = data.choices?.[0]?.message?.content || 'No response.';
       addMessage('agent', reply);
       chatHistory.push({ role: 'assistant', content: reply });
+      // Schedule next autonomous Director message
+      if (continueAuto) scheduleAutoMessage();
     } catch (e: any) {
       typing.remove();
       if (e.name !== 'AbortError') addMessage('system', 'Connection error. Is the backend running?');
