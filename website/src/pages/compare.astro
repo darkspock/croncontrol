@@ -1,0 +1,196 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+const competitors = [
+  {
+    name: 'Trigger.dev',
+    tagline: 'TypeScript background jobs',
+    license: 'Apache 2.0',
+    lang: 'TypeScript only',
+    pricing: 'Free + paid cloud',
+    strengths: ['Great DX for TypeScript', 'Long-running without timeouts', 'Checkpointing', 'Realtime streaming'],
+    weaknesses: ['TypeScript only', 'No SSH/SSM/K8s execution', 'No dynamic orchestration', 'No AI director', 'No human-in-the-loop'],
+  },
+  {
+    name: 'Temporal',
+    tagline: 'Durable execution engine',
+    license: 'MIT',
+    lang: 'Go, Java, TypeScript, Python, PHP',
+    pricing: 'Free + Temporal Cloud',
+    strengths: ['Extremely durable', 'Multi-language SDKs', 'Mature and battle-tested', 'Strong community'],
+    weaknesses: ['High operational complexity', 'No cron scheduling UI', 'No multi-target execution (SSH/SSM/K8s)', 'No AI director', 'No real-time chat', 'Workers execute code, not external targets'],
+  },
+  {
+    name: 'Apache Airflow',
+    tagline: 'Workflow orchestration for data',
+    license: 'Apache 2.0',
+    lang: 'Python',
+    pricing: 'Free (self-hosted)',
+    strengths: ['Massive ecosystem', 'DAG-based scheduling', 'Backfill/catchup', 'Many operators (SSH, HTTP, K8s)'],
+    weaknesses: ['Very complex setup', 'Python only for DAGs', 'Static DAGs (no runtime decisions)', 'No AI director', 'No human-in-the-loop', 'No durable queue', 'Heavy resource usage'],
+  },
+  {
+    name: 'Inngest',
+    tagline: 'Event-driven serverless functions',
+    license: 'Proprietary (SDK open)',
+    lang: 'TypeScript, Go, Python',
+    pricing: 'Free tier + paid',
+    strengths: ['Simple DX', 'Step functions', 'Event-driven', 'Concurrency control'],
+    weaknesses: ['Not self-hostable (engine)', 'No SSH/SSM/K8s', 'No orchestration', 'No AI director', 'No human-in-the-loop', 'No real-time chat'],
+  },
+  {
+    name: 'n8n',
+    tagline: 'Visual workflow automation',
+    license: 'Fair Code',
+    lang: 'Visual (no code)',
+    pricing: 'Free + paid cloud',
+    strengths: ['Visual builder', '400+ integrations', 'Easy for non-developers', 'Self-hostable'],
+    weaknesses: ['Not code-first', 'No dynamic runtime decisions', 'No AI director', 'No container execution', 'No SSH/SSM', 'Limited for developers'],
+  },
+  {
+    name: 'Kestra',
+    tagline: 'Orchestration and scheduling',
+    license: 'Apache 2.0',
+    lang: 'YAML flows',
+    pricing: 'Free + Enterprise',
+    strengths: ['YAML-based workflows', 'Many plugins', 'Backfills', 'Good UI'],
+    weaknesses: ['Static YAML flows', 'No runtime decisions', 'No AI director', 'No human-in-the-loop', 'No real-time chat', 'No per-attempt traceability'],
+  },
+]
+
+const matrix = [
+  { feature: 'Cron scheduling', cc: '✓', trigger: '✓', temporal: '~', airflow: '✓', inngest: '✓', n8n: '✓', kestra: '✓' },
+  { feature: 'Durable queue with retry', cc: '✓', trigger: '✓', temporal: '✓', airflow: '~', inngest: '✓', n8n: '—', kestra: '~' },
+  { feature: 'HTTP execution', cc: '✓', trigger: '—', temporal: '—', airflow: '✓', inngest: '—', n8n: '✓', kestra: '✓' },
+  { feature: 'SSH execution', cc: '✓', trigger: '—', temporal: '—', airflow: '✓', inngest: '—', n8n: '—', kestra: '~' },
+  { feature: 'AWS SSM execution', cc: '✓', trigger: '—', temporal: '—', airflow: '~', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Kubernetes Jobs', cc: '✓', trigger: '—', temporal: '—', airflow: '✓', inngest: '—', n8n: '—', kestra: '✓' },
+  { feature: 'Container execution', cc: '✓', trigger: '✓', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Worker runtime (private nets)', cc: '✓', trigger: '—', temporal: '✓', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Dynamic orchestration', cc: '✓', trigger: '—', temporal: '✓', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'AI Director', cc: '✓', trigger: '—', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Human-in-the-loop (N choices)', cc: '✓', trigger: '~', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Real-time chat', cc: '✓', trigger: '—', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'MCP server (AI agents)', cc: '✓', trigger: '—', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Heartbeat/progress', cc: '✓', trigger: '—', temporal: '✓', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Replay failed runs', cc: '✓', trigger: '✓', temporal: '—', airflow: '~', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Idempotency keys', cc: '✓', trigger: '~', temporal: '~', airflow: '—', inngest: '~', n8n: '—', kestra: '—' },
+  { feature: 'Auto-provisioned infra', cc: '✓', trigger: '✓', temporal: '—', airflow: '—', inngest: '✓', n8n: '—', kestra: '—' },
+  { feature: 'Language agnostic', cc: '✓', trigger: '—', temporal: '✓', airflow: '—', inngest: '~', n8n: '✓', kestra: '✓' },
+  { feature: 'Single binary deploy', cc: '✓', trigger: '—', temporal: '—', airflow: '—', inngest: '—', n8n: '—', kestra: '—' },
+  { feature: 'Open source (MIT)', cc: '✓', trigger: 'Apache', temporal: 'MIT', airflow: 'Apache', inngest: '—', n8n: 'Fair', kestra: 'Apache' },
+]
+---
+
+<Layout title="Compare — CronControl vs Competitors" description="How CronControl compares to Trigger.dev, Temporal, Airflow, Inngest, n8n, and Kestra.">
+  <section class="mx-auto max-w-4xl px-6 pt-24 pb-16 text-center">
+    <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Comparison</p>
+    <h1 class="font-display text-4xl sm:text-5xl tracking-tight">
+      How CronControl<br/>
+      <span class="italic text-accent-light">compares</span>
+    </h1>
+    <p class="mt-4 text-muted max-w-2xl mx-auto">CronControl combines scheduling, multi-method execution, durable queues, and AI-powered orchestration in one open-source binary. Here's how it stacks up.</p>
+  </section>
+
+  <!-- Competitor cards -->
+  <section class="mx-auto max-w-6xl px-6 py-16">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {competitors.map(c => (
+        <div class="p-5 rounded-2xl border border-border-subtle bg-raised/50">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold">{c.name}</h3>
+            <span class="text-[10px] font-mono text-dim px-1.5 py-0.5 rounded bg-muted">{c.license}</span>
+          </div>
+          <p class="text-xs text-dim mb-3">{c.tagline} · {c.lang}</p>
+
+          <div class="space-y-2">
+            <div>
+              <p class="text-[10px] text-emerald uppercase tracking-wider font-medium mb-1">Strengths</p>
+              {c.strengths.map(s => (
+                <p class="text-xs text-dim flex items-start gap-1"><span class="text-emerald mt-0.5">+</span> {s}</p>
+              ))}
+            </div>
+            <div>
+              <p class="text-[10px] text-red-400 uppercase tracking-wider font-medium mb-1">vs CronControl</p>
+              {c.weaknesses.map(s => (
+                <p class="text-xs text-dim flex items-start gap-1"><span class="text-red-400 mt-0.5">−</span> {s}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Feature matrix -->
+  <section class="mx-auto max-w-6xl px-6 py-16">
+    <div class="text-center mb-12 reveal">
+      <h2 class="font-display text-2xl sm:text-3xl tracking-tight">Feature <span class="italic text-accent-light">matrix</span></h2>
+      <p class="mt-2 text-sm text-muted">✓ = native support · ~ = partial/plugin · — = not available</p>
+    </div>
+
+    <div class="overflow-x-auto reveal">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="border-b border-border">
+            <th class="text-left py-2.5 px-2 text-muted font-medium min-w-48">Feature</th>
+            <th class="text-center py-2.5 px-2 text-accent-light font-semibold">CronControl</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">Trigger.dev</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">Temporal</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">Airflow</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">Inngest</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">n8n</th>
+            <th class="text-center py-2.5 px-2 text-muted font-medium">Kestra</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map(row => (
+            <tr class="border-b border-border-subtle hover:bg-muted/10">
+              <td class="py-2 px-2 text-dim">{row.feature}</td>
+              <td class={`py-2 px-2 text-center font-medium ${row.cc === '✓' ? 'text-emerald' : 'text-dim'}`}>{row.cc}</td>
+              <td class={`py-2 px-2 text-center ${row.trigger === '✓' ? 'text-emerald' : row.trigger === '~' ? 'text-amber' : 'text-dim'}`}>{row.trigger}</td>
+              <td class={`py-2 px-2 text-center ${row.temporal === '✓' ? 'text-emerald' : row.temporal === '~' ? 'text-amber' : 'text-dim'}`}>{row.temporal}</td>
+              <td class={`py-2 px-2 text-center ${row.airflow === '✓' ? 'text-emerald' : row.airflow === '~' ? 'text-amber' : 'text-dim'}`}>{row.airflow}</td>
+              <td class={`py-2 px-2 text-center ${row.inngest === '✓' ? 'text-emerald' : row.inngest === '~' ? 'text-amber' : 'text-dim'}`}>{row.inngest}</td>
+              <td class={`py-2 px-2 text-center ${row.n8n === '✓' ? 'text-emerald' : row.n8n === '~' ? 'text-amber' : 'text-dim'}`}>{row.n8n}</td>
+              <td class={`py-2 px-2 text-center ${row.kestra === '✓' ? 'text-emerald' : row.kestra === '~' ? 'text-amber' : 'text-dim'}`}>{row.kestra}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Key differentiators -->
+  <section class="mx-auto max-w-3xl px-6 py-16 reveal">
+    <h2 class="font-display text-2xl sm:text-3xl tracking-tight text-center mb-8">Why <span class="italic text-accent-light">CronControl</span></h2>
+    <div class="space-y-4">
+      {[
+        { title: 'One binary, not an ecosystem', text: 'CronControl is a single Go binary with an embedded React dashboard. No Zookeeper, no Redis, no Kubernetes required. Just PostgreSQL.' },
+        { title: 'Execute anything, anywhere', text: 'Other platforms run your code in their runtime. CronControl executes on your infrastructure via HTTP, SSH, SSM, K8s, or containers. Language agnostic.' },
+        { title: 'AI-native orchestration', text: 'The AI Director is built-in, not a plugin. Claude, GPT, or Gemini can coordinate your workflows autonomously, with human oversight when needed.' },
+        { title: 'No process stays alive waiting', text: 'Unlike Temporal\'s durable execution, CronControl musicians run and exit. State lives in the database, not in frozen processes. Simpler, cheaper, more robust.' },
+        { title: 'Open source, MIT licensed', text: 'No feature gates, no telemetry, no vendor lock-in. Fork it, extend it, self-host it. The full platform, not an open-core subset.' },
+      ].map(d => (
+        <div class="p-5 rounded-xl border border-border-subtle bg-raised/30">
+          <h3 class="text-sm font-semibold mb-1">{d.title}</h3>
+          <p class="text-sm text-dim leading-relaxed">{d.text}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="mx-auto max-w-3xl px-6 py-20 text-center reveal">
+    <h2 class="font-display text-3xl tracking-tight">Ready to switch?</h2>
+    <p class="mt-4 text-muted">Deploy in under a minute. Self-hosted, open source, MIT licensed.</p>
+    <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="https://app.croncontrol.dev" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+        Try Now
+      </a>
+      <a href="https://github.com/darkspock/croncontrol" class="px-6 py-3 text-sm text-muted hover:text-text border border-border rounded-xl transition-all">
+        View on GitHub
+      </a>
+    </div>
+  </section>
+</Layout>

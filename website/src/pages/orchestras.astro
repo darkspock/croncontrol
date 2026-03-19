@@ -1,0 +1,207 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+const features = [
+  {
+    icon: '🎼',
+    title: 'Director Pattern',
+    desc: 'A Director (code or AI) coordinates Musicians (tasks). Each musician does its work and returns a result. The director decides what happens next.',
+  },
+  {
+    icon: '🤖',
+    title: 'AI Director',
+    desc: 'Plug in Claude, GPT, or Gemini as your director. The AI reads the full execution history and autonomously decides the next step — or asks a human when unsure.',
+  },
+  {
+    icon: '💬',
+    title: 'Real-Time Chat',
+    desc: 'Every orchestra has a live chat channel. Director, musicians, and humans can post messages, share files, request help, and trigger actions.',
+  },
+  {
+    icon: '🙋',
+    title: 'Human-in-the-Loop',
+    desc: 'Musicians can present N choices to a human. Each choice links to a different next step. Not just approve/reject — real multi-path decisions.',
+  },
+  {
+    icon: '📦',
+    title: 'Container Execution',
+    desc: 'Run musicians as ephemeral Docker containers on auto-provisioned Hetzner servers. 0.5 CPU per musician, Swarm handles scheduling.',
+  },
+  {
+    icon: '🔐',
+    title: 'Workspace Secrets',
+    desc: 'Encrypted vault for API keys, credentials, and tokens. Injected as environment variables into musicians. AES-256-GCM at rest.',
+  },
+  {
+    icon: '📎',
+    title: 'Artifacts & Results',
+    desc: 'Musicians store structured JSON results and upload files (S3/local). The next musician reads the result — no shared database needed.',
+  },
+  {
+    icon: '⏱',
+    title: 'Timeout & Budget',
+    desc: 'Set a max duration, max AI calls, or max movements. Warnings at 80%, automatic failure at 100%. Pause and resume anytime.',
+  },
+  {
+    icon: '🌐',
+    title: '5 Execution Methods',
+    desc: 'Musicians can run via HTTP, SSH, AWS SSM, Kubernetes Jobs, or Docker containers. Mix and match within the same orchestra.',
+  },
+]
+
+const comparison = [
+  { label: 'Director decides next step at runtime', us: true, temporal: false, trigger: false, airflow: false },
+  { label: 'AI Director (Claude/GPT/Gemini)', us: true, temporal: false, trigger: false, airflow: false },
+  { label: 'Human-in-the-loop with N choices', us: true, temporal: false, trigger: false, airflow: false },
+  { label: 'Real-time chat between tasks', us: true, temporal: false, trigger: false, airflow: false },
+  { label: 'Language agnostic (any language)', us: true, temporal: true, trigger: false, airflow: true },
+  { label: 'Container execution (Docker)', us: true, temporal: false, trigger: true, airflow: false },
+  { label: 'Auto-provisioned infrastructure', us: true, temporal: false, trigger: true, airflow: false },
+  { label: 'HTTP/SSH/SSM/K8s execution', us: true, temporal: false, trigger: false, airflow: true },
+  { label: 'Open source (MIT)', us: true, temporal: true, trigger: true, airflow: true },
+  { label: 'No process stays alive waiting', us: true, temporal: false, trigger: false, airflow: true },
+]
+---
+
+<Layout title="Orchestras — CronControl" description="AI-powered workflow orchestration with human-in-the-loop, real-time chat, and multi-model AI directors.">
+  <section class="relative overflow-hidden">
+    <div class="hero-glow absolute inset-0"></div>
+    <div class="grid-bg absolute inset-0"></div>
+
+    <div class="relative mx-auto max-w-4xl px-6 pt-24 pb-16 text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/5 text-sm text-amber-400 mb-8">
+        Coming Soon
+      </div>
+
+      <h1 class="font-display text-4xl sm:text-6xl leading-[1.05] tracking-tight">
+        Workflows that<br/>
+        <span class="text-accent-light glow-text italic">think for themselves.</span>
+      </h1>
+
+      <p class="mt-6 text-lg sm:text-xl text-muted max-w-2xl mx-auto leading-relaxed">
+        Orchestras are multi-step workflows where an AI Director coordinates tasks,
+        humans make decisions in real-time, and everything runs as ephemeral containers
+        on auto-provisioned infrastructure.
+      </p>
+
+      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="https://github.com/darkspock/croncontrol" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+          View on GitHub
+        </a>
+        <a href="/contact" class="px-6 py-3 text-sm text-muted hover:text-text border border-border rounded-xl transition-all">
+          Get Early Access
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="mx-auto max-w-4xl px-6 py-20">
+    <div class="text-center mb-16 reveal">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">How it works</p>
+      <h2 class="font-display text-3xl sm:text-4xl tracking-tight">An orchestra, not a pipeline</h2>
+    </div>
+
+    <div class="reveal p-6 rounded-2xl bg-[#0a0a0c] border border-border-subtle font-mono text-sm leading-relaxed">
+      <div class="space-y-3">
+        <div><span class="text-accent-light">orchestra</span> = cc.create_orchestra(<span class="text-emerald">"product-cleanup"</span>,</div>
+        <div class="pl-8">director=<span class="text-emerald">"ai"</span>,</div>
+        <div class="pl-8">ai_config={'{'}<span class="text-emerald">"provider"</span>: <span class="text-emerald">"anthropic"</span>, <span class="text-emerald">"model"</span>: <span class="text-emerald">"claude-sonnet-4-20250514"</span>{'}'},</div>
+        <div class="pl-8">first_musician=<span class="text-emerald">"prc_scrape"</span>,</div>
+        <div>)</div>
+        <div class="text-dim mt-4"># The AI Director takes over:</div>
+        <div class="text-dim"># 1. Scraper runs → finds 150 products</div>
+        <div class="text-dim"># 2. AI decides: "too many, need validation" → triggers validator</div>
+        <div class="text-dim"># 3. Validator finds 30 invalid → AI asks human: "Delete 30 products?"</div>
+        <div class="text-dim"># 4. Human clicks [Delete expired] [Export CSV] [Ignore]</div>
+        <div class="text-dim"># 5. Human chose "Delete expired" → AI triggers delete process</div>
+        <div class="text-dim"># 6. AI posts to chat: "Cleanup complete. 25 deleted, 5 exported."</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Terminology -->
+  <section class="mx-auto max-w-4xl px-6 py-16">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 reveal">
+      {[
+        { term: 'Orchestra', def: 'A group of related executions working toward a goal' },
+        { term: 'Director', def: 'The decision-maker — code, AI, or human' },
+        { term: 'Musician', def: 'A task that does actual work and returns a result' },
+        { term: 'Score', def: 'The full execution history with results and decisions' },
+      ].map(t => (
+        <div class="p-4 rounded-xl border border-border-subtle bg-[#0a0a0c]">
+          <div class="text-xs font-mono font-medium text-accent-light mb-1">{t.term}</div>
+          <p class="text-xs text-dim">{t.def}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="mx-auto max-w-6xl px-6 py-20">
+    <div class="text-center mb-16 reveal">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Capabilities</p>
+      <h2 class="font-display text-3xl sm:text-4xl tracking-tight">Everything an orchestra<br/><span class="italic text-accent-light">needs to perform</span></h2>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {features.map((f, i) => (
+        <div class="reveal p-6 rounded-2xl border border-border-subtle bg-raised/50 hover:bg-raised hover:border-border transition-all duration-300" style={`transition-delay: ${i * 60}ms`}>
+          <div class="text-2xl mb-3">{f.icon}</div>
+          <h3 class="text-sm font-semibold mb-1.5">{f.title}</h3>
+          <p class="text-sm text-dim leading-relaxed">{f.desc}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Comparison mini -->
+  <section class="mx-auto max-w-4xl px-6 py-20">
+    <div class="text-center mb-12 reveal">
+      <p class="text-xs font-medium text-accent uppercase tracking-[0.2em] mb-3">Comparison</p>
+      <h2 class="font-display text-3xl tracking-tight">What no one else<br/><span class="italic text-accent-light">combines</span></h2>
+    </div>
+
+    <div class="reveal overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-border">
+            <th class="text-left py-3 px-3 text-muted font-medium">Feature</th>
+            <th class="text-center py-3 px-3 text-accent-light font-semibold">CronControl</th>
+            <th class="text-center py-3 px-3 text-muted font-medium">Temporal</th>
+            <th class="text-center py-3 px-3 text-muted font-medium">Trigger.dev</th>
+            <th class="text-center py-3 px-3 text-muted font-medium">Airflow</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comparison.map(row => (
+            <tr class="border-b border-border-subtle">
+              <td class="py-2.5 px-3 text-dim">{row.label}</td>
+              <td class="py-2.5 px-3 text-center">{row.us ? <span class="text-emerald">✓</span> : <span class="text-dim">—</span>}</td>
+              <td class="py-2.5 px-3 text-center">{row.temporal ? <span class="text-emerald">✓</span> : <span class="text-dim">—</span>}</td>
+              <td class="py-2.5 px-3 text-center">{row.trigger ? <span class="text-emerald">✓</span> : <span class="text-dim">—</span>}</td>
+              <td class="py-2.5 px-3 text-center">{row.airflow ? <span class="text-emerald">✓</span> : <span class="text-dim">—</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-center mt-6">
+      <a href="/compare" class="text-sm text-accent-light hover:underline">See full comparison →</a>
+    </p>
+  </section>
+
+  <!-- CTA -->
+  <section class="mx-auto max-w-3xl px-6 py-20 text-center reveal">
+    <h2 class="font-display text-3xl sm:text-4xl tracking-tight">Want early access?</h2>
+    <p class="mt-4 text-muted">Orchestras are in active development. Get notified when they ship.</p>
+    <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="/contact" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+        Get Early Access
+      </a>
+      <a href="https://github.com/darkspock/croncontrol" class="px-6 py-3 text-sm text-muted hover:text-text border border-border rounded-xl transition-all">
+        Star on GitHub
+      </a>
+    </div>
+  </section>
+</Layout>
