@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/use-theme'
 import {
-  LayoutDashboard, Cpu, Play, Clock, Layers, Inbox, AlertTriangle,
+  LayoutDashboard, Cpu, Play, Clock, Layers, Inbox, AlertTriangle, Music,
   Settings, ChevronLeft, ChevronRight, Zap, Server, Sun, Moon, Shield,
   HelpCircle, X
 } from 'lucide-react'
@@ -28,6 +28,12 @@ const navGroups = [
       { icon: Layers, label: 'Queues', path: '/queues' },
       { icon: Inbox, label: 'Jobs', path: '/jobs' },
       { icon: AlertTriangle, label: 'Failed Jobs', path: '/jobs/failed' },
+    ],
+  },
+  {
+    label: 'Orchestras',
+    items: [
+      { icon: Music, label: 'Orchestras', path: '/orchestras' },
     ],
   },
   {
@@ -88,6 +94,10 @@ const helpTexts: Record<string, { title: string; text: string }> = {
   '/admin': {
     title: 'Platform Admin',
     text: 'Global administration across all workspaces. View platform stats, manage workspace states (active/suspended/archived), and promote or revoke platform admin access.',
+  },
+  '/orchestras': {
+    title: 'Orchestras',
+    text: 'Multi-step workflows with a Director that coordinates Musicians (tasks). Create orchestras via the SDK, view the score (execution timeline), and interact via the real-time chat.',
   },
 }
 

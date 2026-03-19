@@ -21,6 +21,8 @@ import { FailedJobs } from '@/pages/FailedJobs'
 import { Settings } from '@/pages/Settings'
 import { Timeline } from '@/pages/Timeline'
 import { ProcessDetail } from '@/pages/ProcessDetail'
+import { OrchestraList } from '@/pages/OrchestraList'
+import { OrchestraDetail } from '@/pages/OrchestraDetail'
 import { Admin } from '@/pages/Admin'
 import { NotFound } from '@/pages/NotFound'
 
@@ -54,6 +56,7 @@ function Router() {
   const jobIdMatch = path.match(/^\/jobs\/([^/]+)$/)
   const procIdMatch = path.match(/^\/processes\/([^/]+)$/)
   const queueIdMatch = path.match(/^\/queues\/([^/]+)$/)
+  const orchIdMatch = path.match(/^\/orchestras\/([^/]+)$/)
 
   switch (true) {
     case path === '/':
@@ -84,6 +87,10 @@ function Router() {
       return <JobList />
     case jobIdMatch !== null && jobIdMatch[1] !== 'failed':
       return <JobDetail jobId={jobIdMatch![1]} />
+    case path === '/orchestras':
+      return <OrchestraList />
+    case orchIdMatch !== null:
+      return <OrchestraDetail orchestraId={orchIdMatch![1]} />
     case path.startsWith('/settings'):
       return <Settings />
     case path.startsWith('/admin'):
