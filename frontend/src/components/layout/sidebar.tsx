@@ -97,7 +97,7 @@ const helpTexts: Record<string, { title: string; text: string }> = {
   },
   '/orchestras': {
     title: 'Orchestras',
-    text: 'Multi-step workflows with a Director that coordinates Musicians (tasks). Create orchestras via the SDK, view the score (execution timeline), and interact via the real-time chat.',
+    text: 'Multi-step workflows with a Director that coordinates AgentNodes (tasks). Create orchestras via the SDK, view the score (execution timeline), and interact via the real-time chat.',
   },
 }
 

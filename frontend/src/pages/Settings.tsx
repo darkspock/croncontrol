@@ -330,7 +330,7 @@ function SecretsTab() {
       <div className="flex items-center justify-between">
         <div>
           <span className="text-sm font-medium">{secrets.length} secrets</span>
-          <p className="text-xs text-muted-foreground mt-0.5">Encrypted with AES-256-GCM. Injected as env vars into "Musicians".</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Encrypted with AES-256-GCM. Injected as env vars into AgentNodes.</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm hover:bg-indigo-400 transition-colors">
           <Plus size={14} /> New Secret
@@ -353,7 +353,7 @@ function SecretsTab() {
         {isLoading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading...</div>
         ) : secrets.length === 0 ? (
-          <div className="p-4 text-sm text-muted-foreground">No secrets. Secrets are encrypted values injected into orchestra "Musicians" as environment variables.</div>
+          <div className="p-4 text-sm text-muted-foreground">No secrets. Secrets are encrypted values injected into orchestra AgentNodes as environment variables.</div>
         ) : secrets.map((s: any) => (
           <div key={s.name} className="flex items-center gap-4 px-4 py-3">
             <Lock size={14} className="text-muted-foreground" />

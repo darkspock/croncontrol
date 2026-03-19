@@ -36,7 +36,7 @@
 ### T09.4 Orchestra Table & Lifecycle
 - [x] `orchestras` table: id, workspace_id, name, director_type, director_process_id, ai_config, state, movement_count, secrets, summary, parent_orchestra_id, wait_for_parent, budget, budget_used, timeout, timeout_at, created_at, updated_at
 - [x] Orchestra states: active, waiting_for_choice, paused, completed, cancelled, failed
-- [x] `POST /orchestras` — create (name, director, first_musician, secrets, timeout, budget)
+- [x] `POST /orchestras` — create (name, director, first_agent_node, secrets, timeout, budget)
 - [x] `GET /orchestras` — list (filter by state)
 - [x] `GET /orchestras/{id}` — get metadata
 - [x] `GET /orchestras/{id}/score` — full score (all movements with results)
@@ -57,7 +57,7 @@
 - [x] Inject event env vars: `CRONCONTROL_EVENT_TYPE`, `CRONCONTROL_EVENT_RUN_ID`, `CRONCONTROL_EVENT_RESULT`
 - [x] Director process runs, reads event via `cc.get_event()`, decides next action
 - [x] SDK: `get_event()` (reads env vars, returns structured event) in all 5 SDKs
-- [x] If director_type=none: no auto-trigger (musicians chain directly)
+- [x] If director_type=none: no auto-trigger (AgentNodes chain directly)
 
 ### T09.7 Ask Choice (Human-in-the-Loop)
 - [x] Add `choice_config JSONB`, `chosen_index INTEGER` columns to runs table
@@ -77,7 +77,7 @@
 ## Phase 3: Chat System
 
 ### T09.9 Orchestra Chat Table & API
-- [x] `orchestra_chat` table: id, orchestra_id, sender_type (system/director/musician/human), sender_id, message_type (text/result/request_help/action/choice/choice_response/file/status/warning), content, data JSONB, created_at
+- [x] `orchestra_chat` table: id, orchestra_id, sender_type (system/director/agent_node/human), sender_id, message_type (text/result/request_help/action/choice/choice_response/file/status/warning), content, data JSONB, created_at
 - [x] `POST /orchestras/{id}/chat` — post message
 - [x] `GET /orchestras/{id}/chat` — list messages (pagination, since=timestamp)
 - [x] System messages auto-posted: movement started/completed/failed, budget warnings
@@ -103,8 +103,8 @@
 - [x] Anthropic provider (Claude API with tool_use)
 - [x] OpenAI provider (GPT API with function_calling)
 - [x] Google provider (Gemini API with function_calling)
-- [x] Tools: next_movement, ask_choice, post_chat, launch_sub_orchestra, finish_orchestra, get_score, list_musicians
-- [x] System prompt includes: orchestra name, available musicians, budget remaining
+- [x] Tools: next_movement, ask_choice, post_chat, launch_sub_orchestra, finish_orchestra, get_score, list_agent_nodes
+- [x] System prompt includes: orchestra name, available AgentNodes, budget remaining
 - [x] Context includes: full score, last event, chat history
 - [x] Fallback: 3 retries, then ask_choice to human with available options
 

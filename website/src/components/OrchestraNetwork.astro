@@ -41,15 +41,15 @@
   // --- Node info for tooltips ---
   const nodeInfo = [
     { role: 'Director', name: 'AI Director', desc: 'Reads the full score, decides the next worker to execute, or asks a human for input.', status: '●  Coordinating 3 active movements', statusColor: '#818cf8' },
-    { role: 'Worker', name: 'Data Scraper', desc: 'Fetches product data from external APIs and returns structured JSON results.', status: '●  Running — 67% progress', statusColor: '#34d399' },
-    { role: 'Worker', name: 'Validator', desc: 'Checks scraped data for anomalies, duplicates, and schema compliance.', status: '●  Idle — waiting for directive', statusColor: '#a1a1aa' },
-    { role: 'Worker', name: 'Transform Pipeline', desc: 'Normalizes, enriches, and transforms data for downstream consumers.', status: '●  Running — 42% progress', statusColor: '#34d399' },
-    { role: 'Worker', name: 'Notifier', desc: 'Sends Slack messages, emails, or webhook calls when conditions are met.', status: '●  Idle — 12 notifications sent', statusColor: '#a1a1aa' },
-    { role: 'Worker', name: 'Database Writer', desc: 'Upserts validated records into PostgreSQL with conflict resolution.', status: '●  Running — 890/1200 rows', statusColor: '#34d399' },
-    { role: 'Worker', name: 'Report Generator', desc: 'Creates PDF/CSV summaries and uploads them as run artifacts.', status: '●  Idle — last report 2m ago', statusColor: '#a1a1aa' },
-    { role: 'Worker', name: 'Cleanup', desc: 'Archives old records, deletes expired data, frees storage.', status: '●  Scheduled — next run in 4m', statusColor: '#fbbf24' },
-    { role: 'Worker', name: 'Health Checker', desc: 'Pings external services, verifies SSL certs, checks DNS.', status: '●  Running — 8/10 checks passed', statusColor: '#34d399' },
-    { role: 'Worker', name: 'ML Inference', desc: 'Runs anomaly detection model on incoming data batches.', status: '●  Idle — GPU container standby', statusColor: '#a1a1aa' },
+    { role: 'AgentNode', name: 'Data Scraper', desc: 'Fetches product data from external APIs and returns structured JSON results.', status: '●  Running — 67% progress', statusColor: '#34d399' },
+    { role: 'AgentNode', name: 'Validator', desc: 'Checks scraped data for anomalies, duplicates, and schema compliance.', status: '●  Idle — waiting for directive', statusColor: '#a1a1aa' },
+    { role: 'AgentNode', name: 'Transform Pipeline', desc: 'Normalizes, enriches, and transforms data for downstream consumers.', status: '●  Running — 42% progress', statusColor: '#34d399' },
+    { role: 'AgentNode', name: 'Notifier', desc: 'Sends Slack messages, emails, or webhook calls when conditions are met.', status: '●  Idle — 12 notifications sent', statusColor: '#a1a1aa' },
+    { role: 'AgentNode', name: 'Database Writer', desc: 'Upserts validated records into PostgreSQL with conflict resolution.', status: '●  Running — 890/1200 rows', statusColor: '#34d399' },
+    { role: 'AgentNode', name: 'Report Generator', desc: 'Creates PDF/CSV summaries and uploads them as run artifacts.', status: '●  Idle — last report 2m ago', statusColor: '#a1a1aa' },
+    { role: 'AgentNode', name: 'Cleanup', desc: 'Archives old records, deletes expired data, frees storage.', status: '●  Scheduled — next run in 4m', statusColor: '#fbbf24' },
+    { role: 'AgentNode', name: 'Health Checker', desc: 'Pings external services, verifies SSL certs, checks DNS.', status: '●  Running — 8/10 checks passed', statusColor: '#34d399' },
+    { role: 'AgentNode', name: 'ML Inference', desc: 'Runs anomaly detection model on incoming data batches.', status: '●  Idle — GPU container standby', statusColor: '#a1a1aa' },
   ];
 
   // --- Nodes ---

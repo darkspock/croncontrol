@@ -32,7 +32,7 @@ EPIC-09 introduced the container execution method using Docker Swarm. But Swarm 
 3. Hetzner API: create CX22 server
 4. Cloud-init: install Docker, join Swarm, report ready
 5. Server registered in DB as workspace infrastructure
-6. Container executor uses this server for musicians
+6. Container executor uses this server for AgentNodes
 7. When no active orchestras for X hours → server marked idle
 8. Idle server destroyed after grace period (configurable, default 1h)
 ```

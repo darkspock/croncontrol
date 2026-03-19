@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Enable runtime-driven workflow orchestration where an Orchestra Director coordinates Musicians (tasks) via a shared chat, shares results between movements, requests human decisions, supports sub-orchestras, and optionally uses AI (multi-model) to make autonomous decisions — all without keeping processes alive.
+Enable runtime-driven workflow orchestration where an Orchestra Director coordinates AgentNodes (tasks) via a shared chat, shares results between movements, requests human decisions, supports sub-orchestras, and optionally uses AI (multi-model) to make autonomous decisions — all without keeping processes alive.
 
 ## Why This Epic Exists
 
@@ -14,20 +14,20 @@ CronControl schedules and executes individual tasks. But real operational workfl
 |------|-----------|
 | **Orchestra** | A named group of related executions. Has its own lifecycle, director, chat, secrets, storage, budget, and timeout. Created from code via SDK. |
 | **Director** | The decision-maker. Runs after each movement. Can be: a user process (code), a built-in AI Director (Claude/GPT/Gemini), or none (direct chaining). |
-| **Musician** | Any process that does actual work. Musicians can post to the chat, request help, and share files — but don't manage the workflow. |
+| **AgentNode** | Any process that does actual work. AgentNodes can post to the chat, request help, and share files — but don't manage the workflow. |
 | **Movement** | A single run within an orchestra. Has a step number. |
 | **Score** | The full history: all movements, results, chat messages, and decisions. |
-| **Chat** | A shared message channel for the orchestra. Director, musicians, and humans can post messages and trigger actions. |
+| **Chat** | A shared message channel for the orchestra. Director, AgentNodes, and humans can post messages and trigger actions. |
 
 ## Lifecycle
 
 ```
 1. SDK creates orchestra → state: active
-2. First musician triggered → movement 1
-3. Musician executes, posts to chat, sets result, exits
+2. First AgentNode triggered → movement 1
+3. AgentNode executes, posts to chat, sets result, exits
 4. CronControl triggers Director with event
 5. Director reads score + chat + result, decides:
-   a) next_movement → triggers musician (goto 3)
+   a) next_movement → triggers AgentNode (goto 3)
    b) ask_choice → presents options to human, state: waiting_for_choice
    c) launch_sub_orchestra → creates child orchestra (wait or parallel)
    d) finish_orchestra → state: completed
@@ -49,15 +49,15 @@ paused → active                 (resumed, context reloaded)
 
 ## Chat System
 
-Every orchestra has a chat channel. Participants: Director, Musicians, Humans.
+Every orchestra has a chat channel. Participants: Director, AgentNodes, Humans.
 
 ### Message Types
 
 | Type | Who sends | What it does |
 |------|-----------|--------------|
 | `text` | anyone | Informational message |
-| `result` | musician | Structured JSON result attached |
-| `request_help` | musician | Asks for assistance, director/human can respond |
+| `result` | agent node | Structured JSON result attached |
+| `request_help` | agent node | Asks for assistance, director/human can respond |
 | `action` | director/human | Triggers a programmatic action (defined in code) |
 | `choice` | director | Presents buttons to human |
 | `choice_response` | human | Human clicked a choice button |
@@ -67,10 +67,10 @@ Every orchestra has a chat channel. Participants: Director, Musicians, Humans.
 
 ### Chat Actions
 
-Musicians and directors can register actions that are triggerable via chat:
+AgentNodes and directors can register actions that are triggerable via chat:
 
 ```python
-# In a musician
+# In an AgentNode
 cc.register_action("retry_failed", handler=retry_failed_items)
 cc.post_chat("Found 5 failures. Retry?", actions=[
     {"label": "Retry all", "action": "retry_failed", "params": {"all": True}},
@@ -94,13 +94,13 @@ cc.register_action(name, handler)
 Real-time chat panel on the orchestra Score page (SSE/WebSocket):
 ```
 [system]     Movement 1: scrape-products started
-[musician]   Scraping https://example.com...
-[musician]   Found 150 products ✅
+[agent node]   Scraping https://example.com...
+[agent node]   Found 150 products ✅
 [system]     Movement 1: completed (2.3s)
 [director]   Launching validation for 150 products
 [system]     Movement 2: validate-products started
-[musician]   30 invalid products found
-[musician]   ⚠️ Need review — 5 products have missing prices
+[agent node]   30 invalid products found
+[agent node]   ⚠️ Need review — 5 products have missing prices
 [human]      @director skip the 5 missing prices, delete the rest
 [director]   Acknowledged. Presenting options:
 [director]   [🔴 Delete 25] [Export CSV] [Ignore]
@@ -118,7 +118,7 @@ sub = cc.launch_sub_orchestra(
     parent_orchestra_id,
     name="run-tests",
     director="prc_test_director",
-    first_musician="prc_unit_tests",
+    first_agent_node="prc_unit_tests",
     wait=True,   # parent waits for child to complete
     # wait=False  # parent continues in parallel
 )
@@ -164,7 +164,7 @@ orchestra = cc.create_orchestra("cleanup",
         "system_prompt": "You are an ops director. Be conservative with deletes.",
         "temperature": 0.1,
     },
-    first_musician="prc_scrape",
+    first_agent_node="prc_scrape",
     secrets=["ANTHROPIC_API_KEY"],
 )
 ```
@@ -175,13 +175,13 @@ The AI Director receives these tools via the LLM's tool_use:
 
 ```json
 [
-  {"name": "next_movement", "description": "Trigger a musician process", "parameters": {"process_id": "string", "payload": "object"}},
+  {"name": "next_movement", "description": "Trigger an AgentNode process", "parameters": {"process_id": "string", "payload": "object"}},
   {"name": "ask_choice", "description": "Present choices to human", "parameters": {"message": "string", "choices": "array"}},
   {"name": "post_chat", "description": "Send message to orchestra chat", "parameters": {"message": "string"}},
-  {"name": "launch_sub_orchestra", "description": "Launch a child orchestra", "parameters": {"name": "string", "director": "string", "first_musician": "string", "wait": "boolean"}},
+  {"name": "launch_sub_orchestra", "description": "Launch a child orchestra", "parameters": {"name": "string", "director": "string", "first_agent_node": "string", "wait": "boolean"}},
   {"name": "finish_orchestra", "description": "End the orchestra", "parameters": {"summary": "string"}},
   {"name": "get_score", "description": "Read full orchestra history", "parameters": {}},
-  {"name": "list_musicians", "description": "List available processes", "parameters": {}}
+  {"name": "list_agent_nodes", "description": "List available processes", "parameters": {}}
 ]
 ```
 
@@ -189,7 +189,7 @@ The AI Director receives these tools via the LLM's tool_use:
 
 If LLM API fails after 3 retries:
 - Posts to chat: "AI Director unavailable. Please decide manually."
-- Presents ask_choice with available musicians + cancel option
+- Presents ask_choice with available AgentNodes + cancel option
 - Human takes over
 
 ## Timeout & Budget
@@ -199,7 +199,7 @@ If LLM API fails after 3 retries:
 ```python
 orchestra = cc.create_orchestra("cleanup",
     director="prc_director",
-    first_musician="prc_scrape",
+    first_agent_node="prc_scrape",
     timeout="2h",  # cancel if not finished in 2 hours
 )
 ```
@@ -217,7 +217,7 @@ orchestra = cc.create_orchestra("ai-analysis",
     director="ai",
     ai_config={"provider": "anthropic", "model": "claude-sonnet-4-20250514"},
     budget={
-        "max_movements": 20,          # max musician executions
+        "max_movements": 20,          # max AgentNode executions
         "max_ai_calls": 50,           # max LLM API calls
         "max_duration_minutes": 120,   # max wall-clock time
     },
@@ -282,14 +282,14 @@ s3://croncontrol-artifacts/
 Files are shared by posting them as chat messages:
 
 ```python
-# Musician uploads to its own space
+# AgentNode uploads to its own space
 cc.upload_artifact(run_id, "report.pdf", file_bytes)
 
 # Share with the orchestra via chat
 cc.post_chat(orchestra_id, "Report ready", type="file",
     artifact={"run_id": run_id, "name": "report.pdf"})
 
-# Another musician or director reads it
+# Another AgentNode or director reads it
 url = cc.get_artifact_url(run_id, "report.pdf")
 ```
 
@@ -303,7 +303,7 @@ Server-Sent Events (SSE) on `GET /orchestras/{id}/stream`:
 
 ```
 event: chat
-data: {"type": "text", "from": "musician", "message": "Processing..."}
+data: {"type": "text", "from": "agent_node", "message": "Processing..."}
 
 event: movement
 data: {"type": "started", "process": "scrape-products", "step": 1}
@@ -368,11 +368,11 @@ orchestras:
 
 ## Container Execution Method (Docker Swarm)
 
-New execution method `container` for running musicians as ephemeral Docker containers on a Swarm cluster.
+New execution method `container` for running AgentNodes as ephemeral Docker containers on a Swarm cluster.
 
 ### Why Swarm
 
-- Musicians typically need 0.5 CPU — Swarm packs 4 per 2-CPU server automatically
+- AgentNodes typically need 0.5 CPU — Swarm packs 4 per 2-CPU server automatically
 - Zero overhead vs Nomad/K8s — comes with Docker, 1 command to setup
 - Auto bin-packing, overlay networking, built-in secrets
 - Adding capacity = `docker swarm join` on a new server
@@ -390,7 +390,7 @@ docker swarm join --token SWMTKN-xxx manager-ip:2377
 ### How It Works
 
 ```
-1. Musician has execution_method: container
+1. AgentNode has execution_method: container
 2. CronControl calls Docker Swarm API to create a service:
    - image, command, env vars (including secrets + orchestra vars)
    - resource limits (cpu: 0.5, memory: 1G)
@@ -488,7 +488,7 @@ Dashboard > Settings > Container Pool:
 ```bash
 # Need more capacity? Add a server:
 docker swarm join --token SWMTKN-xxx manager-ip:2377
-# Swarm immediately starts scheduling new musicians on it
+# Swarm immediately starts scheduling new AgentNodes on it
 
 # Scale down:
 docker node update --availability drain node-id
@@ -520,7 +520,7 @@ docker node update --availability drain node-id
 - [ ] `orchestras` table with full lifecycle (active/waiting/paused/completed/cancelled/failed)
 - [ ] `workspace_secrets` with AES-256-GCM encryption, CRUD API, never expose values
 - [ ] `run_artifacts` with S3/MinIO + local backends, isolated per orchestra/run
-- [ ] `result JSONB` on runs — set by musician, read by director/next musician
+- [ ] `result JSONB` on runs — set by AgentNode, read by director/next AgentNode
 - [ ] `waiting_for_choice` state with N choices, each linked to a process
 - [ ] Chat system: text, results, help requests, actions, files, system status
 - [ ] Chat actions: programmable buttons that trigger handlers
@@ -536,5 +536,5 @@ docker node update --availability drain node-id
 - [ ] Container registry auth via workspace secrets
 - [ ] Container pool visibility in dashboard (nodes, CPU/memory usage)
 - [ ] All 5 SDKs: full orchestra methods including chat, actions, artifacts, sub-orchestras
-- [ ] Musicians remain pure — no orchestration awareness required
+- [ ] AgentNodes remain pure — no orchestration awareness required
 - [ ] No process stays running while waiting for human decision

@@ -6,7 +6,7 @@ const features = [
   {
     icon: '🎼',
     title: 'Director Pattern',
-    desc: 'A Director (code or AI) coordinates "Musicians" (tasks). Each "Musician" does its work and returns a result. The Director decides what happens next.',
+    desc: 'A Director (code or AI) coordinates AgentNodes (tasks). Each AgentNode does its work and returns a result. The Director decides what happens next.',
   },
   {
     icon: '🤖',
@@ -16,27 +16,27 @@ const features = [
   {
     icon: '💬',
     title: 'Real-Time Chat',
-    desc: 'Every orchestra has a live chat channel. Director, "Musicians", and humans can post messages, share files, request help, and trigger actions.',
+    desc: 'Every orchestra has a live chat channel. Director, AgentNodes, and humans can post messages, share files, request help, and trigger actions.',
   },
   {
     icon: '🙋',
     title: 'Human-in-the-Loop',
-    desc: '"Musicians" can present N choices to a human. Each choice links to a different next step. Not just approve/reject — real multi-path decisions.',
+    desc: 'AgentNodes can present N choices to a human. Each choice links to a different next step. Not just approve/reject — real multi-path decisions.',
   },
   {
     icon: '📦',
     title: 'Container Execution',
-    desc: 'Run "Musicians" as ephemeral Docker containers on auto-provisioned Hetzner servers. 0.5 CPU per "Musician", Swarm handles scheduling.',
+    desc: 'Run AgentNodes as ephemeral Docker containers on auto-provisioned Hetzner servers. 0.5 CPU per AgentNode, Swarm handles scheduling.',
   },
   {
     icon: '🔐',
     title: 'Workspace Secrets',
-    desc: 'Encrypted vault for API keys, credentials, and tokens. Injected as environment variables into "Musicians". AES-256-GCM at rest.',
+    desc: 'Encrypted vault for API keys, credentials, and tokens. Injected as environment variables into AgentNodes. AES-256-GCM at rest.',
   },
   {
     icon: '📎',
     title: 'Artifacts & Results',
-    desc: '"Musicians" store structured JSON results and upload files (S3/local). The next "Musician" reads the result — no shared database needed.',
+    desc: 'AgentNodes store structured JSON results and upload files (S3/local). The next AgentNode reads the result — no shared database needed.',
   },
   {
     icon: '⏱',
@@ -46,7 +46,7 @@ const features = [
   {
     icon: '🌐',
     title: '5 Execution Methods',
-    desc: '"Musicians" can run via HTTP, SSH, AWS SSM, Kubernetes Jobs, or Docker containers. Mix and match within the same orchestra.',
+    desc: 'AgentNodes can run via HTTP, SSH, AWS SSM, Kubernetes Jobs, or Docker containers. Mix and match within the same orchestra.',
   },
 ]
 
@@ -114,7 +114,7 @@ const comparison = [
         <div><span class="text-accent-light">orchestra</span> = cc.create_orchestra(<span class="text-emerald">"product-cleanup"</span>,</div>
         <div class="pl-8">director=<span class="text-emerald">"ai"</span>,</div>
         <div class="pl-8">ai_config={'{'}<span class="text-emerald">"provider"</span>: <span class="text-emerald">"anthropic"</span>, <span class="text-emerald">"model"</span>: <span class="text-emerald">"claude-sonnet-4-20250514"</span>{'}'},</div>
-        <div class="pl-8">first_musician=<span class="text-emerald">"prc_scrape"</span>,</div>
+        <div class="pl-8">first_agent_node=<span class="text-emerald">"prc_scrape"</span>,</div>
         <div>)</div>
         <div class="text-dim mt-4"># The AI Director takes over:</div>
         <div class="text-dim"># 1. Scraper runs → finds 150 products</div>
@@ -133,7 +133,7 @@ const comparison = [
       {[
         { term: 'Orchestra', def: 'A group of related executions working toward a goal' },
         { term: 'Director', def: 'The decision-maker — code, AI, or human' },
-        { term: '"Musician" (Worker)', def: 'A task that does actual work and returns a result' },
+        { term: '"Musician" (AgentNode)', def: 'An autonomous node that does actual work and returns a result' },
         { term: 'Score', def: 'The full execution history with results and decisions' },
       ].map(t => (
         <div class="p-4 rounded-xl border border-border-subtle bg-[#0a0a0c]">
