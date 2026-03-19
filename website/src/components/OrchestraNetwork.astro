@@ -13,7 +13,7 @@
     <p id="tt-status" class="text-[10px] font-mono mt-1.5 flex items-center gap-1.5"></p>
   </div>
   <!-- Chat panel -->
-  <div id="chat-panel" class="absolute right-0 top-0 bottom-0 w-[280px] bg-[#0c0c10]/95 backdrop-blur-xl border-l border-indigo-500/15 flex flex-col z-40 transition-transform duration-300" style="border-radius: 0 0.75rem 0.75rem 0; transform: translateX(100%)">
+  <div id="chat-panel" class="absolute right-0 top-0 bottom-0 w-[280px] bg-[#0c0c10]/95 backdrop-blur-xl border-l border-indigo-500/15 flex-col z-40" style="border-radius: 0 0.75rem 0.75rem 0; display: none;">
     <div class="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/50">
       <div class="flex items-center gap-2">
         <span id="chat-dot" class="w-2 h-2 rounded-full bg-indigo-400"></span>
@@ -171,7 +171,7 @@
   function openChat(idx: number) {
     chatNodeIdx = idx;
     chatOpen = true;
-    chatPanel.style.transform = 'translateX(0)';
+    chatPanel.style.display = 'flex';
     const info = nodeInfo[idx];
     chatTitle.textContent = info.name;
     chatDot.style.backgroundColor = info.statusColor;
@@ -196,7 +196,7 @@
 
   function closeChat() {
     chatOpen = false;
-    chatPanel.style.transform = 'translateX(100%)';
+    chatPanel.style.display = 'none';
     chatNodeIdx = -1;
     if (chatAbort) { chatAbort.abort(); chatAbort = null; }
   }
