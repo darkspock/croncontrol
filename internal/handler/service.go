@@ -1862,6 +1862,29 @@ func (s *Service) CancelOrchestra(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "cancelled"}})
 }
 
+func (s *Service) PauseOrchestra(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	s.queries.UpdateOrchestraState(r.Context(), orchID, "paused")
+	// Post chat message
+	actor, _ := auth.GetActor(r.Context())
+	s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
+		ID: id.New("msg_"), OrchestraID: orchID, SenderType: "system",
+		MessageType: "status", Content: fmt.Sprintf("Orchestra paused by %s", actor.ID),
+	})
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "paused"}})
+}
+
+func (s *Service) ResumeOrchestra(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	s.queries.UpdateOrchestraState(r.Context(), orchID, "active")
+	actor, _ := auth.GetActor(r.Context())
+	s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
+		ID: id.New("msg_"), OrchestraID: orchID, SenderType: "system",
+		MessageType: "status", Content: fmt.Sprintf("Orchestra resumed by %s", actor.ID),
+	})
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "active"}})
+}
+
 func (s *Service) FinishOrchestraHandler(w http.ResponseWriter, r *http.Request) {
 	orchID := chi.URLParam(r, "id")
 	var req struct{ Summary string `json:"summary"` }

@@ -38,6 +38,7 @@ import (
 	"github.com/croncontrol/croncontrol/internal/planner"
 	"github.com/croncontrol/croncontrol/internal/queue"
 	"github.com/croncontrol/croncontrol/internal/recovery"
+	orchestramonitor "github.com/croncontrol/croncontrol/internal/orchestra"
 	"github.com/croncontrol/croncontrol/internal/storage"
 	"github.com/croncontrol/croncontrol/internal/worker"
 )
@@ -190,6 +191,8 @@ func run() error {
 	metricsCollector.Start(ctx)
 	cleanupComp.Start(ctx)
 	workerDisp.Start(ctx)
+	orchMonitor := orchestramonitor.NewMonitor(pool, 30*time.Second)
+	orchMonitor.Start(ctx)
 
 	// Handler service
 	svc := handler.NewService(queries, pool, orchestrator, depResolver, webhookNotifier)
@@ -374,6 +377,8 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Get("/orchestras/{id}", svc.GetOrchestraHandler)
 			r.Get("/orchestras/{id}/score", svc.GetOrchestraScore)
 			r.Post("/orchestras/{id}/cancel", svc.CancelOrchestra)
+			r.Post("/orchestras/{id}/pause", svc.PauseOrchestra)
+			r.Post("/orchestras/{id}/resume", svc.ResumeOrchestra)
 			r.Post("/orchestras/{id}/finish", svc.FinishOrchestraHandler)
 			r.Post("/orchestras/{id}/chat", svc.PostChatMessage)
 			r.Get("/orchestras/{id}/chat", svc.ListChatMessages)
