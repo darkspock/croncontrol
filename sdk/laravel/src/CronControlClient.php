@@ -200,6 +200,110 @@ class CronControlClient
         $this->delete("api-keys/{$id}");
     }
 
+    // ── Run Results ─────────────────────────────────────────────────────────
+
+    public function setResult(string $runId, array $data): array
+    {
+        return $this->patch("runs/{$runId}/result", $data);
+    }
+
+    public function getResult(string $runId): array
+    {
+        return $this->get("runs/{$runId}/result");
+    }
+
+    // ── Secrets ─────────────────────────────────────────────────────────────
+
+    public function listSecrets(): array
+    {
+        return $this->get('secrets');
+    }
+
+    public function createSecret(string $name, string $value): array
+    {
+        return $this->post('secrets', ['name' => $name, 'value' => $value]);
+    }
+
+    public function updateSecret(string $name, string $value): array
+    {
+        return $this->put("secrets/{$name}", ['value' => $value]);
+    }
+
+    public function deleteSecret(string $name): void
+    {
+        $this->delete("secrets/{$name}");
+    }
+
+    // ── Artifacts ───────────────────────────────────────────────────────────
+
+    public function listArtifacts(string $runId): array
+    {
+        return $this->get("runs/{$runId}/artifacts");
+    }
+
+    public function getArtifactUrl(string $runId, string $name): string
+    {
+        return rtrim($this->http->getConfig('base_uri'), '/') . "/runs/{$runId}/artifacts/{$name}";
+    }
+
+    // ── Orchestras ──────────────────────────────────────────────────────────
+
+    public function createOrchestra(array $data): array
+    {
+        return $this->post('orchestras', $data);
+    }
+
+    public function getScore(string $orchestraId): array
+    {
+        return $this->get("orchestras/{$orchestraId}/score");
+    }
+
+    public function finishOrchestra(string $id, string $summary = ''): array
+    {
+        return $this->post("orchestras/{$id}/finish", ['summary' => $summary]);
+    }
+
+    public function cancelOrchestra(string $id): array
+    {
+        return $this->post("orchestras/{$id}/cancel");
+    }
+
+    public function nextMovement(string $runId, string $processId, ?array $payload = null): array
+    {
+        return $this->post("runs/{$runId}/next", ['process_id' => $processId, 'payload' => $payload]);
+    }
+
+    public function askChoice(string $runId, string $message, array $choices): array
+    {
+        return $this->post("runs/{$runId}/choice", ['message' => $message, 'choices' => $choices]);
+    }
+
+    /**
+     * Read orchestra event context from environment variables.
+     */
+    public function getEvent(): array
+    {
+        $result = getenv('CRONCONTROL_EVENT_RESULT');
+
+        return [
+            'type' => getenv('CRONCONTROL_EVENT_TYPE') ?: '',
+            'orchestraId' => getenv('CRONCONTROL_ORCHESTRA_ID') ?: '',
+            'step' => (int) (getenv('CRONCONTROL_ORCHESTRA_STEP') ?: '0'),
+            'runId' => getenv('CRONCONTROL_EVENT_RUN_ID') ?: '',
+            'result' => $result ? json_decode($result, true) : null,
+        ];
+    }
+
+    public function postChat(string $orchestraId, string $content, string $type = 'text'): array
+    {
+        return $this->post("orchestras/{$orchestraId}/chat", ['content' => $content, 'message_type' => $type]);
+    }
+
+    public function getChat(string $orchestraId): array
+    {
+        return $this->get("orchestras/{$orchestraId}/chat");
+    }
+
     // ── Heartbeat (no auth required) ───────────────────────────────────────
 
     /**
@@ -241,6 +345,11 @@ class CronControlClient
     private function put(string $path, array $body): array
     {
         return $this->request('PUT', $path, ['json' => $body]);
+    }
+
+    private function patch(string $path, array $body): array
+    {
+        return $this->request('PATCH', $path, ['json' => $body]);
     }
 
     private function delete(string $path): void

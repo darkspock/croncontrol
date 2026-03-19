@@ -29,7 +29,7 @@ See:
 
 ## Epic Sequence
 
-> All epics completed on 2026-03-18. Zero open tasks across all 8 epics.
+> EPICs 01–08 completed on 2026-03-18. EPIC-09 and EPIC-10 in progress.
 
 | Order | Epic | Primary Outcome | Status | Depends On |
 |---|---|---|---|---|
@@ -41,6 +41,8 @@ See:
 | 6 | EPIC-06 | Heartbeats, alerts, logging, health, and data lifecycle | DONE | EPIC-02, EPIC-03, EPIC-04 |
 | 7 | EPIC-07 | Dashboard, onboarding, admin flows, and billing UX | DONE | EPIC-05, EPIC-06 |
 | 8 | EPIC-08 | Agentic API, MCP, CLI, and SDK surface | DONE | EPIC-01 through EPIC-07 |
+| 9 | EPIC-09 | Orchestras — dynamic workflow orchestration with AI director | ~90% | EPIC-03, EPIC-04, EPIC-08 |
+| 10 | EPIC-10 | Serverless infrastructure — auto-scaling execution backend | ~30% | EPIC-03, EPIC-09 |
 
 ## Implementation Summary
 
@@ -109,6 +111,29 @@ Components: Sidebar, AppLayout (with workspace switcher), StateBadge, TargetIcon
 | Laravel SDK | Guzzle + service provider + facade, auto-discovery |
 | Documentation | 4 guides: worker setup, MCP setup, CLI quickstart, webhook integration |
 
+### EPIC-09 — ~90%
+
+| Component | Notes |
+|-----------|-------|
+| Run result JSONB | PATCH/GET result endpoints, SDK support, CRONCONTROL_TRIGGERED_BY |
+| Workspace secrets vault | AES-256-GCM encrypted, CRUD API, SDK support |
+| Run artifacts | S3/MinIO + local backends, upload/download/list API, SDK support |
+| Orchestra core | Table, lifecycle states, movements, score API, cancel |
+| Next movement | Dynamic trigger, secret injection, env vars, step tracking |
+| Director auto-trigger | Event injection, director re-invocation on movement completion |
+| Ask choice | Human-in-the-loop choices, waiting_for_choice state, choose API |
+| Finish orchestra | Complete with summary, webhook event |
+| Chat system | Table, API, message types, actions, SSE streaming |
+| AI director | Multi-model (Anthropic, OpenAI, Google), tool use, budget tracking, fallback |
+| Container executor | Docker Swarm executor, resource limits, registry auth |
+| Timeout/budget/pause | Orchestra timeout monitor, budget counters, pause/resume API |
+| Dashboard | Orchestra list and detail pages exist; secrets UI and infrastructure dashboard pending |
+| Storage isolation | Pending |
+
+### EPIC-10 — ~30%
+
+Design and initial code for serverless execution infrastructure. Auto-scaling backend for container workloads. Not yet functional — architecture defined, some scaffolding in place.
+
 ## Bug Fixes (2026-03-18)
 
 Critical bugs found by code review and fixed:
@@ -144,6 +169,11 @@ Critical bugs found by code review and fixed:
 
 - EPIC-08 Agentic API, MCP, CLI, and SDKs
 
+### Milestone E: Orchestration and Infrastructure — IN PROGRESS
+
+- EPIC-09 Orchestras — Dynamic Workflow Orchestration (~90%)
+- EPIC-10 Serverless Infrastructure (~30%)
+
 ## MVP Status
 
 The original MVP scope is fully implemented:
@@ -166,6 +196,11 @@ Beyond MVP, also implemented:
 - [x] Email verification, password reset, invitations, disposable email detection
 - [x] Command palette, 19 frontend pages, 4 documentation guides
 
+In progress:
+
+- [ ] Orchestras — dynamic workflow orchestration with AI director (~90% — backend done, frontend partial)
+- [ ] Serverless infrastructure — auto-scaling execution backend (~30% — design + scaffolding)
+
 ## Epic Documents
 
 - [EPIC-01 Canonical Platform Foundation](epics/epic-01-canonical-platform-foundation.md)
@@ -176,6 +211,8 @@ Beyond MVP, also implemented:
 - [EPIC-06 Observability, Alerts, and Data Lifecycle](epics/epic-06-observability-alerts-and-data-lifecycle.md)
 - [EPIC-07 Dashboard and Admin Experience](epics/epic-07-dashboard-and-admin-experience.md)
 - [EPIC-08 Agentic API, MCP, CLI, and SDKs](epics/epic-08-agentic-api-mcp-cli-and-sdks.md)
+- [EPIC-09 Orchestras — Dynamic Workflow Orchestration](epics/epic-09-tasks.md)
+- [EPIC-10 Serverless Infrastructure](epics/epic-10-tasks.md)
 
 ## Guides
 

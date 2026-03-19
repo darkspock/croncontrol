@@ -328,6 +328,11 @@ func (c *Client) FinishOrchestra(ctx context.Context, id, summary string) error 
 	return err
 }
 
+func (c *Client) CancelOrchestra(ctx context.Context, id string) error {
+	_, err := c.do(ctx, "POST", "/orchestras/"+id+"/cancel", nil, nil)
+	return err
+}
+
 func (c *Client) NextMovement(ctx context.Context, runID, processID string, payload any) (*SingleResponse, error) {
 	return c.single(ctx, "POST", "/runs/"+runID+"/next", map[string]any{"process_id": processID, "payload": payload}, nil)
 }
