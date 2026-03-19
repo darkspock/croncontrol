@@ -51,6 +51,19 @@ logging:
   # opensearch_url: http://localhost:9200
   # opensearch_auth: admin:admin
 
+infra:
+  enabled: false                         # enable auto-provisioning
+  provider: hetzner                      # only hetzner for now
+  # hetzner_api_token: ""                # CC_INFRA_HETZNER_API_TOKEN
+  datacenter: fsn1                       # fsn1, nbg1, hel1
+  server_type: cx22                      # cx22 = 2 vCPU, 4GB RAM
+  # ssh_key_name: croncontrol            # pre-created in Hetzner
+  # swarm_manager_ip: ""                 # IP of the Swarm manager
+  # swarm_join_token: ""                 # docker swarm join-token worker
+  grace_period: 1h                       # idle before destroy
+  max_servers_per_workspace: 10
+  # infra_secret: ""                     # for server ready callback auth
+
 saas:
   registration_enabled: true
   disposable_email_check: true

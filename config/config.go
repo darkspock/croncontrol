@@ -20,6 +20,7 @@ type Config struct {
 	Retention   RetentionConfig   `mapstructure:"retention"`
 	Logging     LoggingConfig     `mapstructure:"logging"`
 	SaaS        SaaSConfig        `mapstructure:"saas"`
+	Infra       InfraConfig       `mapstructure:"infra"`
 }
 
 type ServerConfig struct {
@@ -113,6 +114,20 @@ type SaaSConfig struct {
 	DisposableEmailCheck bool   `mapstructure:"disposable_email_check"`
 	BaseURL              string `mapstructure:"base_url"`
 	PlatformAdminEmail   string `mapstructure:"platform_admin_email"` // auto-promote on startup
+}
+
+type InfraConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	Provider       string `mapstructure:"provider"`        // hetzner
+	HetznerToken   string `mapstructure:"hetzner_api_token"`
+	Datacenter     string `mapstructure:"datacenter"`      // fsn1, nbg1, hel1
+	ServerType     string `mapstructure:"server_type"`     // cx22
+	SSHKeyName     string `mapstructure:"ssh_key_name"`
+	SwarmManagerIP string `mapstructure:"swarm_manager_ip"`
+	SwarmJoinToken string `mapstructure:"swarm_join_token"`
+	GracePeriod    string `mapstructure:"grace_period"`    // e.g. "1h"
+	MaxServers     int    `mapstructure:"max_servers_per_workspace"`
+	InfraSecret    string `mapstructure:"infra_secret"`
 }
 
 // Load reads configuration from config.yaml and environment variables.
