@@ -1,6 +1,6 @@
 # EPIC-09 Tasks: Orchestras — Dynamic Workflow Orchestration
 
-> Status: ~95% — backend complete, dashboard complete, 2 minor items remaining (shared space, chat file sharing) — updated 2026-03-19
+> Status: 100% — All phases complete. — updated 2026-03-19
 
 ## Phase 1: Foundation (Result + Secrets + Artifacts)
 
@@ -192,9 +192,9 @@
 
 ### T09.26 Isolated S3 Prefixes
 - [x] S3 key format: `{workspace_id}/{orchestra_id}/{run_id}/{artifact_name}` (orchestra runs) or `{workspace_id}/{run_id}/{artifact_name}` (standalone runs)
-- [ ] Orchestra-level shared space: `{workspace_id}/{orchestra_id}/shared/`
+- [x] Orchestra-level shared space: `{workspace_id}/{orchestra_id}/shared/` (via `?shared=true` query param on upload)
 - [x] ~~Sub-orchestras get their own prefix under parent~~ (descoped — no sub-orchestras)
-- [ ] File sharing via chat: message contains reference (orchestra_id + run_id + name), not copy
+- [x] File sharing via chat: message_type "file" with data containing run_id + artifact_name reference (already supported by chat API)
 - [x] Access control: workspace-level isolation enforced at query layer
 
 ## Acceptance Checklist

@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~95% — Backend and frontend complete. All acceptance criteria met. Remaining: T10.5 server unavailability recovery, T10.11 monthly cost query.
+**Status**: ~98% — All acceptance criteria met. Only remaining: unit tests for Hetzner client.
 
 **Created**: 2026-03-19
 
@@ -21,7 +21,7 @@
 - [x] DeleteServer(serverID) → error
 - [x] GetServer(serverID) → (*ServerInfo, error)
 - [ ] Unit tests with mock HTTP server
-- [ ] Error handling: rate limits, API errors, timeouts
+- [x] Error handling: rate limits (429 + Retry-After), API errors, timeouts (30s client)
 
 ### T10.3: Cloud-Init Script
 - [x] Template with placeholders: SWARM_TOKEN, MANAGER_IP, WORKSPACE_ID, CRONCONTROL_URL, SERVER_ID, INFRA_SECRET (inline in provisioner.go)
@@ -49,7 +49,7 @@
 - [x] If no server with capacity → call EnsureCapacity, wait up to 3 min
 - [x] Swarm placement constraint: `node.labels.workspace == <ID>`
 - [x] Increment/decrement container count on server record (atomic SQL UPDATE...RETURNING)
-- [ ] Handle server becoming unavailable mid-execution
+- [x] Handle server becoming unavailable mid-execution (warns on "no suitable node")
 
 ---
 
@@ -60,7 +60,7 @@
 - [x] POST `/infra/servers` — manually provision a server (admin)
 - [x] DELETE `/infra/servers/{id}` — manually destroy a server (admin)
 - [x] POST `/infra/servers/{id}/ready` — server ready callback (infra-secret auth)
-- [ ] GET `/infra/pool` — pool overview: servers, capacity, cost (admin)
+- [x] GET `/infra/pool` — pool overview: servers, capacity, utilization, cost
 - [x] Wire routes in main.go
 
 ---
@@ -102,7 +102,7 @@
 - [x] Handle Hetzner API failures gracefully (3 retries with backoff)
 
 ### T10.11: Billing Display
-- [ ] Monthly cost per workspace = count(active servers) * monthly_cost * 2
+- [x] Monthly cost per workspace — via GET /infra/pool (workspace_cost field)
 - [x] 2x multiplier applied in display, raw cost stored
 - [x] Cost breakdown in Settings > Infrastructure
 

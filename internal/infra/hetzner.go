@@ -138,6 +138,10 @@ func (h *HetznerClient) doRequest(ctx context.Context, method, url string, body 
 
 	respBody, _ := io.ReadAll(resp.Body)
 
+	if resp.StatusCode == 429 {
+		retryAfter := resp.Header.Get("Retry-After")
+		return nil, fmt.Errorf("hetzner: rate limited (retry after %s)", retryAfter)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("hetzner: HTTP %d: %s", resp.StatusCode, string(respBody))
 	}

@@ -444,6 +444,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 
 			// Infrastructure (servers)
 			r.Get("/infra/servers", svc.ListInfraServers)
+			r.Get("/infra/pool", svc.GetInfraPool)
 			r.Post("/infra/servers", svc.ProvisionServer)
 			r.Delete("/infra/servers/{id}", svc.DestroyInfraServer)
 

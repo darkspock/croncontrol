@@ -1800,6 +1800,36 @@ func (s *Service) ListInfraServers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": servers, "meta": map[string]any{"total": len(servers)}})
 }
 
+func (s *Service) GetInfraPool(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	if s.provisioner == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Infrastructure provisioning not configured", "")
+		return
+	}
+
+	var totalServers, totalContainers, totalCapacity int
+	var totalCost float64
+
+	s.pool.QueryRow(r.Context(),
+		`SELECT count(*), COALESCE(SUM(containers_running), 0), COALESCE(SUM(max_containers), 0), COALESCE(SUM(monthly_cost), 0)
+		 FROM workspace_servers WHERE workspace_id = $1 AND state NOT IN ('destroyed')`, wsID).Scan(
+		&totalServers, &totalContainers, &totalCapacity, &totalCost)
+
+	utilization := 0.0
+	if totalCapacity > 0 {
+		utilization = float64(totalContainers) / float64(totalCapacity) * 100
+	}
+
+	writeJSON(w, 200, map[string]any{"data": map[string]any{
+		"servers":            totalServers,
+		"containers_running": totalContainers,
+		"total_capacity":     totalCapacity,
+		"utilization_pct":    utilization,
+		"hetzner_cost":       totalCost,
+		"workspace_cost":     totalCost * 2,
+	}})
+}
+
 func (s *Service) ProvisionServer(w http.ResponseWriter, r *http.Request) {
 	wsID := auth.WorkspaceID(r.Context())
 	if s.provisioner == nil {
@@ -2307,9 +2337,14 @@ func (s *Service) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 
 	// Storage isolation: include orchestra_id in path if run belongs to one
 	var storageKey string
+	shared := r.URL.Query().Get("shared") == "true"
 	run, runErr := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
 	if runErr == nil && run.OrchestraID != nil && *run.OrchestraID != "" {
-		storageKey = fmt.Sprintf("%s/%s/%s/%s", wsID, *run.OrchestraID, runID, name)
+		if shared {
+			storageKey = fmt.Sprintf("%s/%s/shared/%s", wsID, *run.OrchestraID, name)
+		} else {
+			storageKey = fmt.Sprintf("%s/%s/%s/%s", wsID, *run.OrchestraID, runID, name)
+		}
 	} else {
 		storageKey = fmt.Sprintf("%s/%s/%s", wsID, runID, name)
 	}
