@@ -2305,7 +2305,14 @@ func (s *Service) UploadArtifact(w http.ResponseWriter, r *http.Request) {
 		name = n
 	}
 
-	storageKey := fmt.Sprintf("%s/%s/%s", wsID, runID, name)
+	// Storage isolation: include orchestra_id in path if run belongs to one
+	var storageKey string
+	run, runErr := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if runErr == nil && run.OrchestraID != nil && *run.OrchestraID != "" {
+		storageKey = fmt.Sprintf("%s/%s/%s/%s", wsID, *run.OrchestraID, runID, name)
+	} else {
+		storageKey = fmt.Sprintf("%s/%s/%s", wsID, runID, name)
+	}
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"

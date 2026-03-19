@@ -84,6 +84,11 @@ export const api = {
   listWorkspaces: () => request<{ data: any[]; meta: any }>('/workspaces'),
   switchWorkspace: (id: string) => request<{ data: any }>(`/workspaces/${id}/switch`, { method: 'POST' }),
 
+  // Infrastructure
+  listInfraServers: () => request<{ data: any[]; meta: any }>('/infra/servers'),
+  provisionServer: () => request<{ data: any }>('/infra/servers', { method: 'POST' }),
+  destroyServer: (id: string) => request<{ data: any }>(`/infra/servers/${id}`, { method: 'DELETE' }),
+
   // Secrets
   listSecrets: () => request<{ data: any[] }>('/secrets'),
   createSecret: (name: string, value: string) => request<{ data: any }>('/secrets', { method: 'POST', body: JSON.stringify({ name, value }) }),

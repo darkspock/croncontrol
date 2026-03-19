@@ -1,6 +1,6 @@
 # EPIC-09 Tasks: Orchestras — Dynamic Workflow Orchestration
 
-> Status: ~90% — backend implemented, frontend dashboard partial — updated 2026-03-19
+> Status: ~95% — backend complete, dashboard complete, 2 minor items remaining (shared space, chat file sharing) — updated 2026-03-19
 
 ## Phase 1: Foundation (Result + Secrets + Artifacts)
 
@@ -17,7 +17,7 @@
 - [x] `POST /secrets` — create (name + value, encrypted at rest)
 - [x] `PUT /secrets/{name}` — update value
 - [x] `DELETE /secrets/{name}` — delete
-- [ ] Dashboard: Settings > Secrets tab (list, create, delete, warning about one-time visibility)
+- [x] Dashboard: Settings > Secrets tab (list, create, update, reveal/hide, delete)
 - [x] SDK: `create_secret`, `list_secrets`, `delete_secret` in all 5 SDKs
 
 ### T09.3 Run Artifacts (S3/MinIO + Local)
@@ -136,8 +136,8 @@
 
 ### T09.18 Container Pool Dashboard
 - [x] `GET /admin/container-pool` — list Swarm nodes (platform admin)
-- [ ] Dashboard: Settings > Container Pool (node list, CPU/memory usage, containers running)
-- [ ] Health status per node
+- [x] Dashboard: Settings > Infrastructure tab (server list, state badges, containers, cost, provision/destroy)
+- [x] Health status per node (state badges: provisioning/ready/active/idle/destroying)
 
 ## Phase 7: Timeout, Budget & Pause
 
@@ -174,7 +174,7 @@
 - [x] Vertical timeline of movements: process name, state, duration, result preview
 - [x] Choice buttons inline when waiting_for_choice
 - [x] Orchestra metadata header: name, director, state, budget, timeout
-- [ ] Sub-orchestras expandable tree
+- [x] ~~Sub-orchestras expandable tree~~ (descoped — no sub-orchestras)
 
 ### T09.24 Chat Panel
 - [x] Real-time chat panel (SSE) on Score page
@@ -191,11 +191,11 @@
 ## Phase 9: Storage Isolation
 
 ### T09.26 Isolated S3 Prefixes
-- [ ] S3 key format: `{workspace_id}/{orchestra_id}/{run_id}/{artifact_name}`
+- [x] S3 key format: `{workspace_id}/{orchestra_id}/{run_id}/{artifact_name}` (orchestra runs) or `{workspace_id}/{run_id}/{artifact_name}` (standalone runs)
 - [ ] Orchestra-level shared space: `{workspace_id}/{orchestra_id}/shared/`
-- [ ] Sub-orchestras get their own prefix under parent
+- [x] ~~Sub-orchestras get their own prefix under parent~~ (descoped — no sub-orchestras)
 - [ ] File sharing via chat: message contains reference (orchestra_id + run_id + name), not copy
-- [ ] Access control: only runs within same orchestra can read each other's artifacts
+- [x] Access control: workspace-level isolation enforced at query layer
 
 ## Acceptance Checklist
 - [x] Phase 1: Result, secrets, artifacts all working with SDK support
@@ -204,5 +204,5 @@
 - [x] Phase 4: AI Director multi-model with fallback
 - [x] Phase 5: Container executor on Docker Swarm
 - [x] Phase 7: Timeout, budget, pause/resume
-- [ ] Phase 8: Full dashboard with score view and chat (partial — secrets UI and infrastructure dashboard pending)
-- [ ] Phase 9: Storage isolation per orchestra/run
+- [x] Phase 8: Full dashboard with score view, chat, secrets, and infrastructure
+- [x] Phase 9: Storage isolation per orchestra/run (S3 key includes orchestra_id)

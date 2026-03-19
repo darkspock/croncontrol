@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus, Lock, Eye, EyeOff, Pencil } from 'lucide-react'
+import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus, Lock, Eye, EyeOff, Pencil, HardDrive, Loader2 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
 import { formatTimeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
-type Tab = 'api-keys' | 'workers' | 'members' | 'webhooks' | 'credentials' | 'secrets'
+type Tab = 'api-keys' | 'workers' | 'members' | 'webhooks' | 'credentials' | 'secrets' | 'infra'
 
 export function Settings() {
   // Pre-select tab from URL (e.g., /settings/workers)
   const pathTab = window.location.pathname.split('/')[2] as Tab | undefined
-  const [tab, setTab] = useState<Tab>(pathTab && ['api-keys', 'workers', 'members', 'webhooks', 'credentials', 'secrets'].includes(pathTab) ? pathTab : 'api-keys')
+  const [tab, setTab] = useState<Tab>(pathTab && ['api-keys', 'workers', 'members', 'webhooks', 'credentials', 'secrets', 'infra'].includes(pathTab) ? pathTab : 'api-keys')
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: 'api-keys', label: 'API Keys', icon: Key },
@@ -20,6 +20,7 @@ export function Settings() {
     { id: 'members', label: 'Members', icon: Users },
     { id: 'webhooks', label: 'Webhooks', icon: Webhook },
     { id: 'credentials', label: 'Credentials', icon: Shield },
+    { id: 'infra', label: 'Infrastructure', icon: HardDrive },
   ]
 
   return (
@@ -54,6 +55,7 @@ export function Settings() {
       {tab === 'members' && <MembersTab />}
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'credentials' && <CredentialsTab />}
+      {tab === 'infra' && <InfraTab />}
     </div>
   )
 }
@@ -610,6 +612,139 @@ function CredentialsTab() {
         type="k8s"
         endpoint="/api/v1/k8s-clusters"
       />
+    </div>
+  )
+}
+
+// ============================================================
+// Infrastructure Tab
+// ============================================================
+
+function InfraTab() {
+  const qc = useQueryClient()
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['infra-servers'],
+    queryFn: api.listInfraServers,
+    retry: false,
+  })
+  const servers = data?.data || []
+  const notConfigured = (error as any)?.status === 501
+
+  const [provisioning, setProvisioning] = useState(false)
+
+  const provisionMutation = useMutation({
+    mutationFn: () => api.provisionServer(),
+    onMutate: () => setProvisioning(true),
+    onSettled: () => setProvisioning(false),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['infra-servers'] }),
+  })
+
+  const destroyMutation = useMutation({
+    mutationFn: (id: string) => api.destroyServer(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['infra-servers'] }),
+  })
+
+  const stateColor: Record<string, string> = {
+    provisioning: 'bg-amber-400',
+    ready: 'bg-blue-400',
+    active: 'bg-emerald-400',
+    idle: 'bg-zinc-400',
+    destroying: 'bg-red-400',
+    destroyed: 'bg-zinc-600',
+  }
+
+  const activeServers = servers.filter((s: any) => !['destroyed'].includes(s.state))
+  const totalCost = activeServers.reduce((sum: number, s: any) => sum + (parseFloat(s.monthly_cost) || 4.5), 0)
+
+  if (notConfigured) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border bg-card p-6 text-center">
+          <HardDrive size={32} className="mx-auto text-muted-foreground mb-3" />
+          <p className="text-sm font-medium">Infrastructure not configured</p>
+          <p className="text-xs text-muted-foreground mt-1">Set <code className="font-mono text-xs">infra.enabled: true</code> and configure Hetzner API credentials in config.yaml to enable auto-provisioned servers.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-sm font-medium">{activeServers.length} servers</span>
+          <p className="text-xs text-muted-foreground mt-0.5">Auto-provisioned Hetzner CX22 nodes for container execution.</p>
+        </div>
+        <button
+          onClick={() => provisionMutation.mutate()}
+          disabled={provisioning}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm hover:bg-indigo-400 transition-colors disabled:opacity-50"
+        >
+          {provisioning ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          Provision Server
+        </button>
+      </div>
+
+      {/* Cost summary */}
+      {activeServers.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-2xl font-semibold">{activeServers.length}</p>
+            <p className="text-xs text-muted-foreground">Active servers</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-2xl font-semibold">{activeServers.reduce((sum: number, s: any) => sum + (s.containers_running || 0), 0)} / {activeServers.reduce((sum: number, s: any) => sum + (s.max_containers || 4), 0)}</p>
+            <p className="text-xs text-muted-foreground">Containers</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-2xl font-semibold">{'\u20AC'}{(totalCost * 2).toFixed(0)}/mo</p>
+            <p className="text-xs text-muted-foreground">Estimated cost</p>
+          </div>
+        </div>
+      )}
+
+      {/* Server list */}
+      <div className="rounded-lg border border-border bg-card divide-y divide-border">
+        {isLoading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+        ) : servers.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">No servers provisioned. Servers are created automatically when an orchestra needs container execution.</div>
+        ) : servers.map((s: any) => (
+          <div key={s.id} className="flex items-center gap-4 px-4 py-3">
+            <span className={cn('w-2 h-2 rounded-full', stateColor[s.state] || 'bg-zinc-500')} />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{s.name || s.id}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {s.ip_address || 'pending'} · {s.server_type || 'cx22'} · {s.containers_running || 0}/{s.max_containers || 4} containers
+              </p>
+            </div>
+            <span className={cn('text-xs px-1.5 py-0.5 rounded font-mono',
+              s.state === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
+              s.state === 'idle' ? 'bg-zinc-500/10 text-zinc-400' :
+              s.state === 'provisioning' ? 'bg-amber-500/10 text-amber-400' :
+              s.state === 'destroying' ? 'bg-red-500/10 text-red-400' :
+              'bg-zinc-500/10 text-zinc-400'
+            )}>
+              {s.state}
+            </span>
+            <span className="text-xs text-muted-foreground">{s.created_at ? formatTimeAgo(s.created_at) : ''}</span>
+            {s.state !== 'destroyed' && s.state !== 'destroying' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => { if (confirm(`Destroy server "${s.name || s.id}"? This will terminate all running containers.`)) destroyMutation.mutate(s.id) }}
+                    className="p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Destroy server</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
