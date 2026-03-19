@@ -112,13 +112,23 @@ func (p *Provisioner) provisionServer(ctx context.Context, workspaceID string) (
 	serverName := fmt.Sprintf("cc-%s-%s", workspaceID[:8], serverID[4:12])
 
 	cloudInit := fmt.Sprintf(`#!/bin/bash
-set -e
+set -eo pipefail
+
+report_error() {
+  curl -sf -X POST %s/api/v1/infra/servers/%s/ready \
+    -H "Authorization: Bearer %s" \
+    -H "Content-Type: application/json" \
+    -d "{\"error\": \"$(cat /var/log/cloud-init-output.log | tail -20 | tr '\"' "'" | tr '\n' ' ')\"}" || true
+}
+trap report_error ERR
+
 apt-get update -qq
 curl -fsSL https://get.docker.com | sh
 docker swarm join --token %s %s:2377
 docker node update --label-add workspace=%s $(hostname)
 curl -sf -X POST %s/api/v1/infra/servers/%s/ready -H "Authorization: Bearer %s"
-`, p.config.SwarmJoinToken, p.config.SwarmManagerIP, workspaceID,
+`, p.config.CronControlURL, serverID, p.config.InfraSecret,
+		p.config.SwarmJoinToken, p.config.SwarmManagerIP, workspaceID,
 		p.config.CronControlURL, serverID, p.config.InfraSecret)
 
 	slog.Info("infra: provisioning server", "workspace", workspaceID, "name", serverName)

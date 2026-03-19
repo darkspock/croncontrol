@@ -227,6 +227,10 @@ func (m *Method) Execute(ctx context.Context, params executor.ExecuteParams) (ex
 		return executor.Result{Error: fmt.Errorf("container: wait: %w", err), DurationMs: time.Since(start).Milliseconds()}, nil
 	}
 
+	if result.Error != nil && strings.Contains(result.Error.Error(), "no suitable node") {
+		slog.Warn("container: no suitable node — workspace server may be unavailable", "workspace", params.WorkspaceID, "run", params.RunID)
+	}
+
 	// Collect logs
 	stdout, stderr := m.collectLogs(ctx, serviceID)
 

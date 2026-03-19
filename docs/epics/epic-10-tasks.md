@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~90% — Backend complete. All acceptance criteria met. Remaining: platform admin frontend (capacity/utilization UI), cloud-init error reporting, server unavailability handling.
+**Status**: ~95% — Backend and frontend complete. All acceptance criteria met. Remaining: T10.5 server unavailability recovery, T10.11 monthly cost query.
 
 **Created**: 2026-03-19
 
@@ -85,9 +85,9 @@
 
 ### T10.9: Platform Admin > Infrastructure
 - [x] All servers across all workspaces — GET /admin/infra/servers
-- [ ] Total cost, total capacity (frontend)
-- [ ] Utilization percentage (frontend)
-- [ ] Filter by workspace (frontend)
+- [x] Total cost, total capacity (frontend summary cards)
+- [x] Utilization percentage (frontend)
+- [x] Filter by workspace (frontend text filter)
 
 ---
 

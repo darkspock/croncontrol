@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Shield, Building2, Users, BarChart3, Play, AlertTriangle, Server, Copy, Check } from 'lucide-react'
-import { formatTimeAgo } from '@/lib/utils'
+import { Shield, Building2, Users, BarChart3, Play, AlertTriangle, Server, Copy, Check, HardDrive } from 'lucide-react'
+import { formatTimeAgo, cn } from '@/lib/utils'
 
 const apiKey = () => localStorage.getItem('cc_api_key') || ''
 const headers = () => ({ 'Content-Type': 'application/json', 'X-API-Key': apiKey() })
@@ -12,12 +12,13 @@ async function adminFetch(path: string, options?: RequestInit) {
 }
 
 export function Admin() {
-  const [tab, setTab] = useState<'stats' | 'workspaces' | 'users'>('stats')
+  const [tab, setTab] = useState<'stats' | 'workspaces' | 'users' | 'infra'>('stats')
 
   const tabs = [
     { id: 'stats' as const, label: 'Dashboard', icon: BarChart3 },
     { id: 'workspaces' as const, label: 'Workspaces', icon: Building2 },
     { id: 'users' as const, label: 'Users', icon: Users },
+    { id: 'infra' as const, label: 'Infrastructure', icon: HardDrive },
   ]
 
   return (
@@ -44,6 +45,7 @@ export function Admin() {
       {tab === 'stats' && <StatsTab />}
       {tab === 'workspaces' && <WorkspacesTab />}
       {tab === 'users' && <UsersTab />}
+      {tab === 'infra' && <InfraAdminTab />}
     </div>
   )
 }
@@ -205,6 +207,98 @@ function UsersTab() {
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+function InfraAdminTab() {
+  const [servers, setServers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('')
+
+  useEffect(() => {
+    adminFetch('/infra/servers').then(d => {
+      setServers(d?.data || [])
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const stateColor: Record<string, string> = {
+    provisioning: 'bg-amber-400', ready: 'bg-blue-400', active: 'bg-emerald-400',
+    idle: 'bg-zinc-400', destroying: 'bg-red-400', destroyed: 'bg-zinc-600',
+  }
+
+  const filtered = filter
+    ? servers.filter((s: any) => s.workspace_id?.includes(filter) || s.name?.includes(filter))
+    : servers
+
+  const totalServers = servers.length
+  const totalContainers = servers.reduce((sum: number, s: any) => sum + (s.containers_running || 0), 0)
+  const totalCapacity = servers.reduce((sum: number, s: any) => sum + (s.max_containers || 4), 0)
+  const totalCost = servers.reduce((sum: number, s: any) => sum + (parseFloat(s.monthly_cost) || 4.5), 0)
+  const utilization = totalCapacity > 0 ? Math.round((totalContainers / totalCapacity) * 100) : 0
+
+  if (loading) return <div className="text-sm text-muted-foreground">Loading...</div>
+
+  return (
+    <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="rounded-lg border border-border bg-card p-3 text-center">
+          <p className="text-2xl font-semibold">{totalServers}</p>
+          <p className="text-xs text-muted-foreground">Servers</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3 text-center">
+          <p className="text-2xl font-semibold">{totalContainers} / {totalCapacity}</p>
+          <p className="text-xs text-muted-foreground">Containers</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3 text-center">
+          <p className="text-2xl font-semibold">{utilization}%</p>
+          <p className="text-xs text-muted-foreground">Utilization</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3 text-center">
+          <p className="text-2xl font-semibold">{'\u20AC'}{(totalCost * 2).toFixed(0)}</p>
+          <p className="text-xs text-muted-foreground">Monthly cost</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3 text-center">
+          <p className="text-2xl font-semibold">{'\u20AC'}{totalCost.toFixed(0)}</p>
+          <p className="text-xs text-muted-foreground">Hetzner cost</p>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <input
+        value={filter} onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter by workspace or server name..."
+        className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm"
+      />
+
+      {/* Server list */}
+      <div className="rounded-lg border border-border bg-card divide-y divide-border">
+        {filtered.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">No servers{filter ? ' matching filter' : ''}.</div>
+        ) : filtered.map((s: any) => (
+          <div key={s.id} className="flex items-center gap-4 px-4 py-3">
+            <span className={cn('w-2 h-2 rounded-full', stateColor[s.state] || 'bg-zinc-500')} />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{s.name || s.id}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {s.ip_address || 'pending'} · {s.server_type || 'cx22'} · {s.containers_running || 0}/{s.max_containers || 4} containers
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">{s.workspace_id?.substring(0, 12)}...</span>
+            <span className={cn('text-xs px-1.5 py-0.5 rounded font-mono',
+              s.state === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
+              s.state === 'idle' ? 'bg-zinc-500/10 text-zinc-400' :
+              s.state === 'provisioning' ? 'bg-amber-500/10 text-amber-400' :
+              'bg-zinc-500/10 text-zinc-400'
+            )}>
+              {s.state}
+            </span>
+            <span className="text-xs text-muted-foreground">{s.created_at ? formatTimeAgo(s.created_at) : ''}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
