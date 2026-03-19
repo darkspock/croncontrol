@@ -164,9 +164,13 @@
   });
 
   // --- Chat ---
-  // Chat calls go through the CronControl backend proxy (no API key in frontend)
+  // Proxy URL: use app.croncontrol.dev in prod, localhost in dev
+  const CHAT_API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8090/api/v1/chat/simulate'
+    : 'https://app.croncontrol.dev/api/v1/chat/simulate';
   let chatHistory: { role: string; content: string }[] = [];
   let chatAbort: AbortController | null = null;
+  let chatBusy = false;
 
   function openChat(idx: number) {
     chatNodeIdx = idx;
@@ -177,18 +181,19 @@
     chatDot.style.backgroundColor = info.statusColor;
     chatMessages.innerHTML = '';
     chatHistory = [];
+    chatBusy = false;
     tooltip.style.opacity = '0';
 
-    // Initial exchange: Director asks the node for status
+    // Initial Director message
     const directorMsg = idx === 0
-      ? 'Orchestra "product-cleanup" is active. 3 AgentNodes running, 2 idle. Awaiting validator results before proceeding.'
-      : `Director → ${info.name}: Report your current status.`;
+      ? 'Orchestra "product-cleanup" is active. 3 AgentNodes running, 2 idle. Awaiting validator results.'
+      : `${info.name}, report your current status.`;
 
     addMessage('director', directorMsg);
 
-    // Call Groq for the node's response
+    // Set up system context and get first response
     chatHistory = [
-      { role: 'system', content: info.context + ' You are in a live orchestra chat. The AI Director just asked for your status. Respond naturally as this agent would.' },
+      { role: 'system', content: info.context + ' You are in a live orchestra chat. The AI Director just asked for your status. A human operator may also join the conversation. Respond concisely in 1-2 sentences.' },
       { role: 'user', content: directorMsg },
     ];
     callGroq();
@@ -198,6 +203,7 @@
     chatOpen = false;
     chatPanel.style.display = 'none';
     chatNodeIdx = -1;
+    chatBusy = false;
     if (chatAbort) { chatAbort.abort(); chatAbort = null; }
   }
 
@@ -224,19 +230,19 @@
   function esc(s: string) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   async function callGroq() {
+    if (chatBusy) return;
+    chatBusy = true;
     if (chatAbort) chatAbort.abort();
     chatAbort = new AbortController();
 
-    // Show typing indicator
     const typing = document.createElement('div');
     typing.className = 'flex gap-2 items-center';
-    typing.id = 'typing';
     typing.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center"><span class="text-[8px] font-bold text-emerald-400">A</span></span><span class="text-zinc-500 text-[10px]">typing...</span>`;
     chatMessages.appendChild(typing);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-      const res = await fetch('https://app.croncontrol.dev/api/v1/chat/simulate', {
+      const res = await fetch(CHAT_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: chatHistory, max_tokens: 150 }),
@@ -247,28 +253,11 @@
       const reply = data.choices?.[0]?.message?.content || 'No response.';
       addMessage('agent', reply);
       chatHistory.push({ role: 'assistant', content: reply });
-
-      // After first response, Director follows up after a delay
-      if (chatHistory.length <= 3) {
-        setTimeout(() => {
-          if (!chatOpen || chatNodeIdx < 0) return;
-          const followUp = chatNodeIdx === 0
-            ? 'Checking budget: 62% used. 3 movements remaining within limits.'
-            : `Director → ${nodeInfo[chatNodeIdx].name}: Acknowledged. Proceed with current task. Report when complete.`;
-          addMessage('director', followUp);
-          chatHistory.push({ role: 'user', content: followUp });
-          callGroq();
-        }, 2000);
-      } else if (chatHistory.length <= 5) {
-        // One more exchange
-        setTimeout(() => {
-          if (!chatOpen || chatNodeIdx < 0) return;
-          addMessage('system', 'Movement #4 completed successfully.');
-        }, 2500);
-      }
     } catch (e: any) {
       typing.remove();
-      if (e.name !== 'AbortError') addMessage('system', 'Connection error.');
+      if (e.name !== 'AbortError') addMessage('system', 'Connection error. Is the backend running?');
+    } finally {
+      chatBusy = false;
     }
   }
 
