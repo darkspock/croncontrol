@@ -1978,6 +1978,111 @@ func (s *Service) Choose(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// Orchestra Chat
+// ============================================================================
+
+func (s *Service) PostChatMessage(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	var req struct {
+		Content     string `json:"content"`
+		MessageType string `json:"message_type"`
+		SenderType  string `json:"sender_type"`
+		Data        any    `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Content == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "content is required", "")
+		return
+	}
+	if req.MessageType == "" {
+		req.MessageType = "text"
+	}
+	if req.SenderType == "" {
+		req.SenderType = "human"
+	}
+
+	var dataJSON []byte
+	if req.Data != nil {
+		dataJSON, _ = json.Marshal(req.Data)
+	}
+
+	actor, _ := auth.GetActor(r.Context())
+	msg, err := s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
+		ID:          id.New("msg_"),
+		OrchestraID: orchID,
+		SenderType:  req.SenderType,
+		SenderID:    &actor.ID,
+		MessageType: req.MessageType,
+		Content:     req.Content,
+		Data:        dataJSON,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to post message", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": msg})
+}
+
+func (s *Service) ListChatMessages(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	messages, err := s.queries.ListChatMessagesAll(r.Context(), orchID, 200, 0)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list messages", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": messages, "meta": map[string]any{"total": len(messages)}})
+}
+
+// StreamChat sends real-time chat updates via Server-Sent Events.
+func (s *Service) StreamChat(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, 500, "INTERNAL_ERROR", "Streaming not supported", "")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	flusher.Flush()
+
+	// Poll for new messages every 2 seconds
+	lastCheck := time.Now().Add(-5 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			messages, err := s.queries.ListChatMessages(r.Context(), orchID, lastCheck, 50)
+			if err != nil {
+				continue
+			}
+			for _, msg := range messages {
+				data, _ := json.Marshal(msg)
+				fmt.Fprintf(w, "event: chat\ndata: %s\n\n", data)
+			}
+
+			// Also check orchestra state
+			orch, err := s.queries.GetOrchestra(r.Context(), db.GetOrchestraParams{
+				ID: orchID, WorkspaceID: auth.WorkspaceID(r.Context()),
+			})
+			if err == nil {
+				stateData, _ := json.Marshal(map[string]any{"state": orch.State, "movement_count": orch.MovementCount})
+				fmt.Fprintf(w, "event: state\ndata: %s\n\n", stateData)
+			}
+
+			flusher.Flush()
+			lastCheck = time.Now()
+		}
+	}
+}
+
+// ============================================================================
 // Run Result
 // ============================================================================
 

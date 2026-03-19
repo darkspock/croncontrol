@@ -208,6 +208,49 @@ class CronControl:
     def get_artifact_url(self, run_id: str, name: str) -> str:
         return f"{self.base_url}/api/v1/runs/{run_id}/artifacts/{name}"
 
+    # -- Orchestras --
+    def create_orchestra(self, name: str, **kwargs) -> dict:
+        return self._request("POST", "/orchestras", body={"name": name, **kwargs})
+
+    def get_score(self, orchestra_id: str) -> dict:
+        return self._request("GET", f"/orchestras/{orchestra_id}/score")
+
+    def finish_orchestra(self, orchestra_id: str, summary: str = "") -> None:
+        self._request("POST", f"/orchestras/{orchestra_id}/finish", body={"summary": summary})
+
+    def cancel_orchestra(self, orchestra_id: str) -> None:
+        self._request("POST", f"/orchestras/{orchestra_id}/cancel")
+
+    def next_movement(self, run_id: str, process_id: str, **kwargs) -> dict:
+        return self._request("POST", f"/runs/{run_id}/next", body={"process_id": process_id, **kwargs})
+
+    def ask_choice(self, run_id: str, message: str, choices: list) -> None:
+        self._request("POST", f"/runs/{run_id}/choice", body={"message": message, "choices": choices})
+
+    def ask_confirm(self, run_id: str, message: str, on_approve: str, on_reject: Optional[str] = None) -> None:
+        self.ask_choice(run_id, message, [
+            {"label": "Approve", "process_id": on_approve, "style": "primary"},
+            {"label": "Reject", "process_id": on_reject, "style": "danger"},
+        ])
+
+    def get_event(self) -> dict:
+        """Read orchestra event from env vars (for directors)."""
+        return {
+            "type": os.environ.get("CRONCONTROL_EVENT_TYPE", ""),
+            "orchestra_id": os.environ.get("CRONCONTROL_ORCHESTRA_ID", ""),
+            "step": int(os.environ.get("CRONCONTROL_ORCHESTRA_STEP", "0")),
+            "run_id": os.environ.get("CRONCONTROL_EVENT_RUN_ID", ""),
+            "result": json.loads(os.environ.get("CRONCONTROL_EVENT_RESULT", "null")),
+        }
+
+    # -- Chat --
+    def post_chat(self, orchestra_id: str, content: str, message_type: str = "text", **kwargs) -> dict:
+        return self._request("POST", f"/orchestras/{orchestra_id}/chat",
+            body={"content": content, "message_type": message_type, **kwargs})
+
+    def get_chat(self, orchestra_id: str) -> dict:
+        return self._request("GET", f"/orchestras/{orchestra_id}/chat")
+
     # -- Heartbeat --
     def heartbeat(self, run_id: str, total: int, current: int, message: str = "") -> None:
         """Report progress for a running execution. No auth required."""

@@ -129,6 +129,25 @@ class CronControl {
   listArtifacts(runId) { return this._request('GET', `/runs/${runId}/artifacts`); }
   getArtifactUrl(runId, name) { return `${this.baseUrl}/api/v1/runs/${runId}/artifacts/${name}`; }
 
+  // -- Orchestras --
+  createOrchestra(data) { return this._request('POST', '/orchestras', { body: data }); }
+  getScore(orchestraId) { return this._request('GET', `/orchestras/${orchestraId}/score`); }
+  finishOrchestra(id, summary = '') { return this._request('POST', `/orchestras/${id}/finish`, { body: { summary } }); }
+  cancelOrchestra(id) { return this._request('POST', `/orchestras/${id}/cancel`); }
+  nextMovement(runId, processId, payload) { return this._request('POST', `/runs/${runId}/next`, { body: { process_id: processId, payload } }); }
+  askChoice(runId, message, choices) { return this._request('POST', `/runs/${runId}/choice`, { body: { message, choices } }); }
+  getEvent() {
+    return {
+      type: process.env.CRONCONTROL_EVENT_TYPE || '',
+      orchestraId: process.env.CRONCONTROL_ORCHESTRA_ID || '',
+      step: parseInt(process.env.CRONCONTROL_ORCHESTRA_STEP || '0'),
+      runId: process.env.CRONCONTROL_EVENT_RUN_ID || '',
+      result: JSON.parse(process.env.CRONCONTROL_EVENT_RESULT || 'null'),
+    };
+  }
+  postChat(orchestraId, content, type = 'text') { return this._request('POST', `/orchestras/${orchestraId}/chat`, { body: { content, message_type: type } }); }
+  getChat(orchestraId) { return this._request('GET', `/orchestras/${orchestraId}/chat`); }
+
   // -- Heartbeat (no auth) --
   heartbeat(runId, total, current, message = '') {
     return this._request('POST', '/heartbeat', {

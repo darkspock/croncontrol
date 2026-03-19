@@ -313,6 +313,53 @@ func (c *Client) GetArtifactURL(runID, name string) string {
 	return c.BaseURL + "/api/v1/runs/" + runID + "/artifacts/" + name
 }
 
+// -- Orchestras --
+
+func (c *Client) CreateOrchestra(ctx context.Context, data map[string]any) (*SingleResponse, error) {
+	return c.single(ctx, "POST", "/orchestras", data, nil)
+}
+
+func (c *Client) GetScore(ctx context.Context, id string) (*SingleResponse, error) {
+	return c.single(ctx, "GET", "/orchestras/"+id+"/score", nil, nil)
+}
+
+func (c *Client) FinishOrchestra(ctx context.Context, id, summary string) error {
+	_, err := c.do(ctx, "POST", "/orchestras/"+id+"/finish", map[string]any{"summary": summary}, nil)
+	return err
+}
+
+func (c *Client) NextMovement(ctx context.Context, runID, processID string, payload any) (*SingleResponse, error) {
+	return c.single(ctx, "POST", "/runs/"+runID+"/next", map[string]any{"process_id": processID, "payload": payload}, nil)
+}
+
+func (c *Client) AskChoice(ctx context.Context, runID, message string, choices []map[string]any) error {
+	_, err := c.do(ctx, "POST", "/runs/"+runID+"/choice", map[string]any{"message": message, "choices": choices}, nil)
+	return err
+}
+
+func (c *Client) PostChat(ctx context.Context, orchestraID, content string) (*SingleResponse, error) {
+	return c.single(ctx, "POST", "/orchestras/"+orchestraID+"/chat", map[string]any{"content": content}, nil)
+}
+
+func (c *Client) GetChat(ctx context.Context, orchestraID string) (*ListResponse, error) {
+	return c.list(ctx, "/orchestras/"+orchestraID+"/chat", nil)
+}
+
+// GetEvent reads orchestra event from environment variables (for directors).
+func GetEvent() map[string]any {
+	result := map[string]any{
+		"type":         os.Getenv("CRONCONTROL_EVENT_TYPE"),
+		"orchestra_id": os.Getenv("CRONCONTROL_ORCHESTRA_ID"),
+		"run_id":       os.Getenv("CRONCONTROL_EVENT_RUN_ID"),
+	}
+	if r := os.Getenv("CRONCONTROL_EVENT_RESULT"); r != "" {
+		var parsed any
+		json.Unmarshal([]byte(r), &parsed)
+		result["result"] = parsed
+	}
+	return result
+}
+
 // -- Heartbeat (no auth) --
 
 func (c *Client) Heartbeat(ctx context.Context, runID string, total, current int, message string) error {
