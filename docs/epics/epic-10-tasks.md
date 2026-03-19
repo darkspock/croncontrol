@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~98% — All acceptance criteria met. Only remaining: unit tests for Hetzner client.
+**Status**: 100% — All tasks complete. — updated 2026-03-19
 
 **Created**: 2026-03-19
 
@@ -20,7 +20,7 @@
 - [x] CreateServer(name, sshKeyName, cloudInit) → (serverID, ip, error)
 - [x] DeleteServer(serverID) → error
 - [x] GetServer(serverID) → (*ServerInfo, error)
-- [ ] Unit tests with mock HTTP server
+- [x] Unit tests with mock HTTP server (6 tests: create, delete, get, API error, rate limit, create error)
 - [x] Error handling: rate limits (429 + Retry-After), API errors, timeouts (30s client)
 
 ### T10.3: Cloud-Init Script

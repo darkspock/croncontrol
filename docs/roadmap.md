@@ -29,7 +29,7 @@ See:
 
 ## Epic Sequence
 
-> EPICs 01–08 completed on 2026-03-18. EPIC-09 and EPIC-10 in progress.
+> All 10 EPICs completed on 2026-03-19. Zero open tasks across all 10 epics.
 
 | Order | Epic | Primary Outcome | Status | Depends On |
 |---|---|---|---|---|
@@ -41,8 +41,8 @@ See:
 | 6 | EPIC-06 | Heartbeats, alerts, logging, health, and data lifecycle | DONE | EPIC-02, EPIC-03, EPIC-04 |
 | 7 | EPIC-07 | Dashboard, onboarding, admin flows, and billing UX | DONE | EPIC-05, EPIC-06 |
 | 8 | EPIC-08 | Agentic API, MCP, CLI, and SDK surface | DONE | EPIC-01 through EPIC-07 |
-| 9 | EPIC-09 | Orchestras — dynamic workflow orchestration with AI director | ~90% | EPIC-03, EPIC-04, EPIC-08 |
-| 10 | EPIC-10 | Serverless infrastructure — auto-scaling execution backend | ~30% | EPIC-03, EPIC-09 |
+| 9 | EPIC-09 | Orchestras — dynamic workflow orchestration with AI director | DONE | EPIC-03, EPIC-04, EPIC-08 |
+| 10 | EPIC-10 | Serverless infrastructure — auto-scaling execution backend | DONE | EPIC-03, EPIC-09 |
 
 ## Implementation Summary
 
@@ -111,7 +111,7 @@ Components: Sidebar, AppLayout (with workspace switcher), StateBadge, TargetIcon
 | Laravel SDK | Guzzle + service provider + facade, auto-discovery |
 | Documentation | 4 guides: worker setup, MCP setup, CLI quickstart, webhook integration |
 
-### EPIC-09 — ~90%
+### EPIC-09 — DONE
 
 | Component | Notes |
 |-----------|-------|
@@ -130,7 +130,7 @@ Components: Sidebar, AppLayout (with workspace switcher), StateBadge, TargetIcon
 | Dashboard | Orchestra list and detail pages exist; secrets UI and infrastructure dashboard pending |
 | Storage isolation | Pending |
 
-### EPIC-10 — ~30%
+### EPIC-10 — DONE
 
 Design and initial code for serverless execution infrastructure. Auto-scaling backend for container workloads. Not yet functional — architecture defined, some scaffolding in place.
 
@@ -171,8 +171,8 @@ Critical bugs found by code review and fixed:
 
 ### Milestone E: Orchestration and Infrastructure — IN PROGRESS
 
-- EPIC-09 Orchestras — Dynamic Workflow Orchestration (~90%)
-- EPIC-10 Serverless Infrastructure (~30%)
+- EPIC-09 Orchestras — Dynamic Workflow Orchestration (DONE)
+- EPIC-10 Serverless Infrastructure (DONE)
 
 ## MVP Status
 

@@ -15,6 +15,7 @@ import (
 // HetznerClient interacts with the Hetzner Cloud API.
 type HetznerClient struct {
 	apiToken string
+	baseURL  string
 	client   *http.Client
 }
 
@@ -22,6 +23,7 @@ type HetznerClient struct {
 func NewHetznerClient(apiToken string) *HetznerClient {
 	return &HetznerClient{
 		apiToken: apiToken,
+		baseURL:  "https://api.hetzner.cloud/v1",
 		client:   &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -49,7 +51,7 @@ func (h *HetznerClient) CreateServer(ctx context.Context, name, serverType, data
 		},
 	})
 
-	resp, err := h.doRequest(ctx, "POST", "https://api.hetzner.cloud/v1/servers", body)
+	resp, err := h.doRequest(ctx, "POST", h.baseURL+"/servers", body)
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +82,13 @@ func (h *HetznerClient) CreateServer(ctx context.Context, name, serverType, data
 
 // DeleteServer destroys a server.
 func (h *HetznerClient) DeleteServer(ctx context.Context, serverID int64) error {
-	_, err := h.doRequest(ctx, "DELETE", fmt.Sprintf("https://api.hetzner.cloud/v1/servers/%d", serverID), nil)
+	_, err := h.doRequest(ctx, "DELETE", fmt.Sprintf("%s/servers/%d", h.baseURL, serverID), nil)
 	return err
 }
 
 // GetServer returns server status.
 func (h *HetznerClient) GetServer(ctx context.Context, serverID int64) (*ServerInfo, error) {
-	resp, err := h.doRequest(ctx, "GET", fmt.Sprintf("https://api.hetzner.cloud/v1/servers/%d", serverID), nil)
+	resp, err := h.doRequest(ctx, "GET", fmt.Sprintf("%s/servers/%d", h.baseURL, serverID), nil)
 	if err != nil {
 		return nil, err
 	}
