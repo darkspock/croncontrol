@@ -1,0 +1,336 @@
+---
+// Orchestra animation — a Director hub coordinates "Musicians" in a radial pattern.
+// Many more communication channels than the homepage orb network.
+// Movement is organized (hub-spoke + musician-to-musician), not random drift.
+---
+
+<canvas id="orchestra-network" class="absolute inset-0 w-full h-full" style="pointer-events: none;"></canvas>
+
+<script>
+  const canvas = document.getElementById('orchestra-network') as HTMLCanvasElement;
+  if (!canvas) throw new Error('canvas not found');
+  const ctx = canvas.getContext('2d')!;
+
+  let W = 0, H = 0;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    const rect = canvas.parentElement!.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    layoutNodes();
+  }
+
+  // --- Nodes ---
+  interface OrchestraNode {
+    x: number; y: number;
+    baseR: number; r: number;
+    phase: number; speed: number;
+    hue: number; sat: number; light: number;
+    pulsePhase: number;
+    role: 'director' | 'musician';
+    orbitAngle: number;
+    orbitRadius: number;
+    orbitSpeed: number;
+  }
+
+  const MUSICIAN_COUNT = 9;
+  const nodes: OrchestraNode[] = [];
+
+  const musicianColors = [
+    { h: 200, s: 75, l: 55 },  // cyan
+    { h: 160, s: 60, l: 50 },  // teal
+    { h: 270, s: 60, l: 55 },  // violet
+    { h: 220, s: 80, l: 60 },  // blue
+    { h: 320, s: 55, l: 55 },  // magenta
+    { h: 180, s: 65, l: 50 },  // aqua
+    { h: 250, s: 70, l: 58 },  // purple
+    { h: 140, s: 55, l: 48 },  // green
+    { h: 30, s: 60, l: 55 },   // amber
+  ];
+
+  function layoutNodes() {
+    nodes.length = 0;
+
+    const cx = W / 2;
+    const cy = H * 0.48;
+    const orbitR = Math.min(W, H) * 0.28;
+
+    // Director — center, larger
+    nodes.push({
+      x: cx, y: cy,
+      baseR: 45, r: 45,
+      phase: 0, speed: 0.004,
+      hue: 235, sat: 85, light: 65,
+      pulsePhase: 0,
+      role: 'director',
+      orbitAngle: 0,
+      orbitRadius: 0,
+      orbitSpeed: 0,
+    });
+
+    // Musicians — radial orbit
+    for (let i = 0; i < MUSICIAN_COUNT; i++) {
+      const angle = (i / MUSICIAN_COUNT) * Math.PI * 2 - Math.PI / 2;
+      const p = musicianColors[i % musicianColors.length];
+      // Slight variation in orbit distance
+      const rVariation = 0.85 + Math.random() * 0.3;
+      nodes.push({
+        x: cx + Math.cos(angle) * orbitR * rVariation,
+        y: cy + Math.sin(angle) * orbitR * rVariation,
+        baseR: 18 + Math.random() * 10,
+        r: 0,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.005 + Math.random() * 0.003,
+        hue: p.h, sat: p.s, light: p.l,
+        pulsePhase: Math.random() * Math.PI * 2,
+        role: 'musician',
+        orbitAngle: angle,
+        orbitRadius: orbitR * rVariation,
+        orbitSpeed: 0.0003 + Math.random() * 0.0004,
+      });
+    }
+  }
+
+  layoutNodes();
+
+  // --- Packets ---
+  interface Packet {
+    from: number; to: number;
+    t: number; speed: number;
+    hue: number;
+    cx: number; cy: number;
+    type: 'directive' | 'result' | 'lateral';
+  }
+
+  const packets: Packet[] = [];
+  let nextDirective = 0;
+  let nextResult = 0;
+  let nextLateral = 0;
+
+  function spawnDirective(now: number) {
+    if (now < nextDirective) return;
+    nextDirective = now + 300 + Math.random() * 400;
+
+    const to = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
+    const a = nodes[0], b = nodes[to];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const offset = dist * 0.15 * (Math.random() > 0.5 ? 1 : -1);
+    const angle = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2;
+
+    packets.push({
+      from: 0, to, t: 0,
+      speed: 0.012 + Math.random() * 0.006,
+      hue: 235,
+      cx: mx + Math.cos(angle) * offset,
+      cy: my + Math.sin(angle) * offset,
+      type: 'directive',
+    });
+  }
+
+  function spawnResult(now: number) {
+    if (now < nextResult) return;
+    nextResult = now + 500 + Math.random() * 600;
+
+    const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
+    const a = nodes[from], b = nodes[0];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const offset = dist * 0.15 * (Math.random() > 0.5 ? 1 : -1);
+    const angle = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2;
+
+    packets.push({
+      from, to: 0, t: 0,
+      speed: 0.01 + Math.random() * 0.005,
+      hue: nodes[from].hue,
+      cx: mx + Math.cos(angle) * offset,
+      cy: my + Math.sin(angle) * offset,
+      type: 'result',
+    });
+  }
+
+  function spawnLateral(now: number) {
+    if (now < nextLateral) return;
+    nextLateral = now + 700 + Math.random() * 900;
+
+    const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
+    let to = 1 + Math.floor(Math.random() * (MUSICIAN_COUNT - 1));
+    if (to >= from) to++;
+    if (to > MUSICIAN_COUNT) to = 1;
+
+    const a = nodes[from], b = nodes[to];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    // Curve toward center for lateral messages
+    const centerX = nodes[0].x, centerY = nodes[0].y;
+    const pullFactor = 0.3;
+
+    packets.push({
+      from, to, t: 0,
+      speed: 0.008 + Math.random() * 0.004,
+      hue: a.hue,
+      cx: mx + (centerX - mx) * pullFactor,
+      cy: my + (centerY - my) * pullFactor,
+      type: 'lateral',
+    });
+  }
+
+  // --- Drawing helpers ---
+  function quadBezier(ax: number, ay: number, cx: number, cy: number, bx: number, by: number, t: number) {
+    const u = 1 - t;
+    return { x: u * u * ax + 2 * u * t * cx + t * t * bx, y: u * u * ay + 2 * u * t * cy + t * t * by };
+  }
+
+  function drawConnections() {
+    // Director to all musicians — persistent faint lines
+    const d = nodes[0];
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
+      const m = nodes[i];
+      const alpha = 0.06;
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(m.x, m.y);
+      ctx.strokeStyle = `hsla(235, 60%, 60%, ${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Musician-to-musician ring connections
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
+      const next = i < MUSICIAN_COUNT ? i + 1 : 1;
+      const a = nodes[i], b = nodes[next];
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = `hsla(200, 40%, 50%, 0.03)`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+
+  function drawNode(node: OrchestraNode) {
+    const pulse = 0.5 + 0.5 * Math.sin(node.pulsePhase);
+    const isDirector = node.role === 'director';
+    const glowR = node.r * (isDirector ? 3.0 : 2.2);
+    const coreAlpha = isDirector ? 0.18 + pulse * 0.08 : 0.10 + pulse * 0.05;
+
+    // Outer glow
+    const grd = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowR);
+    grd.addColorStop(0, `hsla(${node.hue}, ${node.sat}%, ${node.light}%, ${coreAlpha})`);
+    grd.addColorStop(0.4, `hsla(${node.hue}, ${node.sat}%, ${node.light}%, ${coreAlpha * 0.5})`);
+    grd.addColorStop(1, `hsla(${node.hue}, ${node.sat}%, ${node.light}%, 0)`);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, glowR, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Inner bright core
+    const core = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, node.r * 0.5);
+    core.addColorStop(0, `hsla(${node.hue}, ${node.sat}%, ${node.light + 15}%, ${0.3 + pulse * 0.12})`);
+    core.addColorStop(1, `hsla(${node.hue}, ${node.sat}%, ${node.light}%, 0)`);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.r * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = core;
+    ctx.fill();
+
+    // Director has an extra ring
+    if (isDirector) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.r * 0.9, 0, Math.PI * 2);
+      ctx.strokeStyle = `hsla(${node.hue}, ${node.sat}%, ${node.light}%, ${0.08 + pulse * 0.04})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  function drawPacket(p: Packet) {
+    const a = nodes[p.from], b = nodes[p.to];
+    const pos = quadBezier(a.x, a.y, p.cx, p.cy, b.x, b.y, p.t);
+
+    const trailLen = p.type === 'directive' ? 8 : 5;
+    const baseAlpha = p.type === 'directive' ? 0.7 : 0.5;
+    const baseRadius = p.type === 'directive' ? 3.5 : 2.5;
+
+    // Trail
+    for (let s = 0; s < trailLen; s++) {
+      const tt = Math.max(0, p.t - s * 0.012);
+      const tp = quadBezier(a.x, a.y, p.cx, p.cy, b.x, b.y, tt);
+      const alpha = (1 - s / trailLen) * baseAlpha;
+      const radius = baseRadius - s * 0.3;
+      ctx.beginPath();
+      ctx.arc(tp.x, tp.y, Math.max(0.5, radius), 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${alpha})`;
+      ctx.fill();
+    }
+
+    // Leading glow
+    const glowSize = p.type === 'directive' ? 14 : 10;
+    const glow = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowSize);
+    glow.addColorStop(0, `hsla(${p.hue}, 90%, 80%, 0.5)`);
+    glow.addColorStop(1, `hsla(${p.hue}, 90%, 80%, 0)`);
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+  }
+
+  // --- Main loop ---
+  function draw(now: number) {
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W / 2;
+    const cy = H * 0.48;
+
+    // Update musician positions (gentle orbit)
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
+      const n = nodes[i];
+      n.orbitAngle += n.orbitSpeed;
+      n.x = cx + Math.cos(n.orbitAngle) * n.orbitRadius;
+      n.y = cy + Math.sin(n.orbitAngle) * n.orbitRadius;
+    }
+
+    // Update all nodes breathing/pulse
+    for (const n of nodes) {
+      n.phase += n.speed;
+      n.r = n.baseR + Math.sin(n.phase) * n.baseR * 0.2;
+      n.pulsePhase += 0.02;
+    }
+
+    // Draw
+    drawConnections();
+    for (const n of nodes) drawNode(n);
+
+    // Spawn packets — much more frequent than homepage
+    spawnDirective(now);
+    spawnResult(now);
+    spawnLateral(now);
+
+    // Animate packets
+    for (let i = packets.length - 1; i >= 0; i--) {
+      const p = packets[i];
+      p.t += p.speed;
+      if (p.t >= 1) {
+        nodes[p.to].pulsePhase = 0; // pulse on arrival
+        packets.splice(i, 1);
+        continue;
+      }
+      drawPacket(p);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 200);
+  });
+  resize();
+</script>
