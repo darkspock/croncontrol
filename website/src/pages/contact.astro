@@ -1,5 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro'
+
+const success = Astro.url.searchParams.get('success') === 'true'
 ---
 
 <Layout title="Contact — CronControl">
@@ -12,7 +14,22 @@ import Layout from '../layouts/Layout.astro'
   </section>
 
   <section class="mx-auto max-w-lg px-6 pb-24">
-    <form class="space-y-4 p-6 rounded-2xl border border-border-subtle bg-raised/30">
+    {success && (
+      <div class="mb-6 px-5 py-4 rounded-xl border border-emerald/20 bg-emerald/5 text-center">
+        <p class="text-sm font-medium text-emerald">Message sent successfully!</p>
+        <p class="text-xs text-dim mt-1">I'll get back to you as soon as possible.</p>
+      </div>
+    )}
+
+    <form
+      action="https://api.web3forms.com/submit"
+      method="POST"
+      class="space-y-4 p-6 rounded-2xl border border-border-subtle bg-raised/30"
+    >
+      <input type="hidden" name="access_key" value="1f4c82d8-526d-4cc9-94ff-fd9d808111fb" />
+      <input type="hidden" name="subject" value="New contact - CronControl" />
+      <input type="hidden" name="redirect" value="https://croncontrol.dev/contact?success=true" />
+      <input type="checkbox" name="botcheck" class="hidden" style="display: none;" />
       <div>
         <label for="name" class="block text-xs font-medium text-muted mb-1.5">Name</label>
         <input type="text" id="name" name="name" required
