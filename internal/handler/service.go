@@ -2784,6 +2784,58 @@ func redactID(id string) string {
 	return id[:4] + "····"
 }
 
+// ============================================================================
+// Chat Simulate (Groq proxy for website demo)
+// ============================================================================
+
+func (s *Service) ChatSimulate(w http.ResponseWriter, r *http.Request) {
+	groqKey := os.Getenv("GROQ_API_KEY")
+	if groqKey == "" {
+		writeError(w, 501, "NOT_CONFIGURED", "Chat simulation not configured", "")
+		return
+	}
+
+	var req struct {
+		Messages  []map[string]string `json:"messages"`
+		MaxTokens int                 `json:"max_tokens"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request body", "")
+		return
+	}
+	if len(req.Messages) == 0 {
+		writeError(w, 400, "VALIDATION_ERROR", "messages is required", "")
+		return
+	}
+	if req.MaxTokens == 0 || req.MaxTokens > 300 {
+		req.MaxTokens = 150
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"model":       "llama-3.3-70b-versatile",
+		"messages":    req.Messages,
+		"max_tokens":  req.MaxTokens,
+		"temperature": 0.7,
+	})
+
+	groqReq, _ := http.NewRequestWithContext(r.Context(), "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
+	groqReq.Header.Set("Content-Type", "application/json")
+	groqReq.Header.Set("Authorization", "Bearer "+groqKey)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(groqReq)
+	if err != nil {
+		writeError(w, 502, "UPSTREAM_ERROR", "Failed to reach AI provider", "")
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
 // Suppress unused import warnings
 var _ = pgx.ErrNoRows
 var _ = slog.Info

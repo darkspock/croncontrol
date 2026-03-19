@@ -148,7 +148,7 @@
   chatClose.addEventListener('click', closeChat);
 
   // --- Chat ---
-  const GROQ_KEY = 'REMOVED';
+  // Chat calls go through the CronControl backend proxy (no API key in frontend)
   let chatHistory: { role: string; content: string }[] = [];
   let chatAbort: AbortController | null = null;
 
@@ -217,10 +217,10 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetch('https://app.croncontrol.dev/api/v1/chat/simulate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: chatHistory, max_tokens: 150, temperature: 0.7 }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: chatHistory, max_tokens: 150 }),
         signal: chatAbort.signal,
       });
       const data = await res.json();

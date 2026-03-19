@@ -332,6 +332,13 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 		r.Post("/heartbeat", svc.Heartbeat)
 		r.Post("/workers/enroll", svc.EnrollWorker)
 		r.Post("/infra/servers/{id}/ready", svc.ServerReadyCallback)
+		r.Options("/chat/simulate", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(204)
+		})
+		r.Post("/chat/simulate", svc.ChatSimulate)
 		r.Post("/register/verify", svc.VerifyEmail)
 		r.Post("/register/resend", svc.ResendVerification)
 		r.Post("/auth/forgot-password", svc.ForgotPassword)
