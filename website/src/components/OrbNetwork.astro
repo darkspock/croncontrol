@@ -1,0 +1,240 @@
+---
+// Animated orb network — floating glowing orbs that pulse, breathe, and send
+// light particles between each other to represent interconnected workloads.
+---
+
+<canvas id="orb-network" class="absolute inset-0 w-full h-full" style="pointer-events: none;"></canvas>
+
+<script>
+  const canvas = document.getElementById('orb-network') as HTMLCanvasElement;
+  if (!canvas) throw new Error('canvas not found');
+  const ctx = canvas.getContext('2d')!;
+
+  let W = 0, H = 0;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    const rect = canvas.parentElement!.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- Orbs ---
+  interface Orb {
+    x: number; y: number;
+    vx: number; vy: number;
+    baseR: number; r: number;
+    phase: number; speed: number;
+    hue: number; sat: number; light: number;
+    pulsePhase: number;
+  }
+
+  const ORB_COUNT = 7;
+  const orbs: Orb[] = [];
+
+  const palette = [
+    { h: 230, s: 80, l: 60 },  // indigo
+    { h: 250, s: 70, l: 55 },  // purple
+    { h: 200, s: 75, l: 55 },  // cyan-ish
+    { h: 270, s: 60, l: 50 },  // violet
+    { h: 220, s: 85, l: 65 },  // bright blue
+    { h: 160, s: 60, l: 50 },  // teal
+    { h: 240, s: 70, l: 58 },  // blue-purple
+  ];
+
+  function initOrbs() {
+    orbs.length = 0;
+    for (let i = 0; i < ORB_COUNT; i++) {
+      const p = palette[i % palette.length];
+      orbs.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        baseR: 30 + Math.random() * 50,
+        r: 0,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.003 + Math.random() * 0.004,
+        hue: p.h,
+        sat: p.s,
+        light: p.l,
+        pulsePhase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  initOrbs();
+
+  // --- Packets (light travelling between orbs) ---
+  interface Packet {
+    from: number; to: number;
+    t: number; speed: number;
+    hue: number;
+    cx: number; cy: number; // control point for curve
+  }
+
+  const packets: Packet[] = [];
+  let nextPacket = 0;
+  const PACKET_INTERVAL = 800; // ms
+
+  function spawnPacket(now: number) {
+    if (now < nextPacket) return;
+    nextPacket = now + PACKET_INTERVAL + Math.random() * 1200;
+
+    const from = Math.floor(Math.random() * ORB_COUNT);
+    let to = Math.floor(Math.random() * (ORB_COUNT - 1));
+    if (to >= from) to++;
+
+    const a = orbs[from], b = orbs[to];
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const offset = dist * 0.3 * (Math.random() > 0.5 ? 1 : -1);
+    const angle = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2;
+
+    packets.push({
+      from, to, t: 0,
+      speed: 0.008 + Math.random() * 0.006,
+      hue: a.hue,
+      cx: mx + Math.cos(angle) * offset,
+      cy: my + Math.sin(angle) * offset,
+    });
+  }
+
+  // --- Connections (faint lines between nearby orbs) ---
+  function drawConnections() {
+    for (let i = 0; i < ORB_COUNT; i++) {
+      for (let j = i + 1; j < ORB_COUNT; j++) {
+        const a = orbs[i], b = orbs[j];
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        const maxDist = 320;
+        if (dist > maxDist) continue;
+        const alpha = (1 - dist / maxDist) * 0.08;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = `hsla(230, 60%, 60%, ${alpha})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // --- Quadratic bezier helper ---
+  function quadBezier(ax: number, ay: number, cx: number, cy: number, bx: number, by: number, t: number) {
+    const u = 1 - t;
+    return {
+      x: u * u * ax + 2 * u * t * cx + t * t * bx,
+      y: u * u * ay + 2 * u * t * cy + t * t * by,
+    };
+  }
+
+  // --- Draw ---
+  function draw(now: number) {
+    ctx.clearRect(0, 0, W, H);
+
+    // connections
+    drawConnections();
+
+    // orbs
+    for (const orb of orbs) {
+      // move
+      orb.x += orb.vx;
+      orb.y += orb.vy;
+
+      // bounce softly
+      if (orb.x < -40) orb.vx = Math.abs(orb.vx);
+      if (orb.x > W + 40) orb.vx = -Math.abs(orb.vx);
+      if (orb.y < -40) orb.vy = Math.abs(orb.vy);
+      if (orb.y > H + 40) orb.vy = -Math.abs(orb.vy);
+
+      // breathing size
+      orb.phase += orb.speed;
+      orb.r = orb.baseR + Math.sin(orb.phase) * orb.baseR * 0.3;
+
+      // pulse effect
+      orb.pulsePhase += 0.02;
+      const pulse = 0.5 + 0.5 * Math.sin(orb.pulsePhase);
+
+      // draw glow layers
+      const grd = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r * 2.5);
+      grd.addColorStop(0, `hsla(${orb.hue}, ${orb.sat}%, ${orb.light}%, ${0.12 + pulse * 0.06})`);
+      grd.addColorStop(0.4, `hsla(${orb.hue}, ${orb.sat}%, ${orb.light}%, ${0.06 + pulse * 0.03})`);
+      grd.addColorStop(1, `hsla(${orb.hue}, ${orb.sat}%, ${orb.light}%, 0)`);
+
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, orb.r * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      // inner bright core
+      const core = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r * 0.6);
+      core.addColorStop(0, `hsla(${orb.hue}, ${orb.sat}%, ${orb.light + 15}%, ${0.25 + pulse * 0.1})`);
+      core.addColorStop(1, `hsla(${orb.hue}, ${orb.sat}%, ${orb.light}%, 0)`);
+
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, orb.r * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = core;
+      ctx.fill();
+    }
+
+    // packets
+    spawnPacket(now);
+    for (let i = packets.length - 1; i >= 0; i--) {
+      const p = packets[i];
+      p.t += p.speed;
+      if (p.t >= 1) {
+        // pulse the target orb
+        orbs[p.to].pulsePhase = 0;
+        packets.splice(i, 1);
+        continue;
+      }
+
+      const a = orbs[p.from], b = orbs[p.to];
+      const pos = quadBezier(a.x, a.y, p.cx, p.cy, b.x, b.y, p.t);
+
+      // trail
+      const trailLen = 6;
+      for (let s = 0; s < trailLen; s++) {
+        const tt = Math.max(0, p.t - s * 0.015);
+        const tp = quadBezier(a.x, a.y, p.cx, p.cy, b.x, b.y, tt);
+        const alpha = (1 - s / trailLen) * 0.6;
+        const radius = 3 - s * 0.3;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, Math.max(0.5, radius), 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${alpha})`;
+        ctx.fill();
+      }
+
+      // leading glow
+      const glow = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 12);
+      glow.addColorStop(0, `hsla(${p.hue}, 90%, 80%, 0.5)`);
+      glow.addColorStop(1, `hsla(${p.hue}, 90%, 80%, 0)`);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+
+  // Re-init on significant resize
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resize();
+      initOrbs();
+    }, 200);
+  });
+</script>

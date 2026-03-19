@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro'
+import OrbNetwork from '../components/OrbNetwork.astro'
 
 const features = [
   { icon: '⏱', title: 'Cron, Interval & On-Demand', desc: 'Three schedule types with timezone/DST handling, missed-run recovery, and dependency chains.' },
@@ -38,6 +39,7 @@ const arch = [
 <Layout title="CronControl — Operational Workloads, Under Control">
   <!-- Hero -->
   <section class="relative overflow-hidden">
+    <OrbNetwork />
     <div class="hero-glow absolute inset-0"></div>
     <div class="grid-bg absolute inset-0"></div>
 
