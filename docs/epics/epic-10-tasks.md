@@ -24,12 +24,12 @@
 - [ ] Error handling: rate limits, API errors, timeouts
 
 ### T10.3: Cloud-Init Script
-- [ ] Template with placeholders: SWARM_TOKEN, MANAGER_IP, WORKSPACE_ID, CRONCONTROL_URL, SERVER_ID, INFRA_SECRET
-- [ ] Install Docker CE
-- [ ] `docker swarm join` with worker token
-- [ ] Label node with `workspace=<ID>`
-- [ ] POST to `/api/v1/infra/servers/{id}/ready` on completion
-- [ ] Error reporting on cloud-init failure
+- [x] Template with placeholders: SWARM_TOKEN, MANAGER_IP, WORKSPACE_ID, CRONCONTROL_URL, SERVER_ID, INFRA_SECRET (inline in provisioner.go)
+- [x] Install Docker CE (`curl -fsSL https://get.docker.com | sh`)
+- [x] `docker swarm join` with worker token
+- [x] Label node with `workspace=<ID>`
+- [x] POST to `/api/v1/infra/servers/{id}/ready` on completion
+- [x] Error reporting on cloud-init failure (trap ERR → POST error with last 20 log lines)
 
 ---
 
