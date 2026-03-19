@@ -38,6 +38,7 @@ import (
 	"github.com/croncontrol/croncontrol/internal/planner"
 	"github.com/croncontrol/croncontrol/internal/queue"
 	"github.com/croncontrol/croncontrol/internal/recovery"
+	"github.com/croncontrol/croncontrol/internal/storage"
 	"github.com/croncontrol/croncontrol/internal/worker"
 )
 
@@ -208,6 +209,18 @@ func run() error {
 		slog.Info("google oauth enabled")
 	}
 
+	// Encryption key for secrets
+	svc.SetEncryptionKey([]byte(cfg.Auth.EncryptionKey))
+
+	// Artifact storage (local by default)
+	localStore, err := storage.NewLocalBackend("./data/artifacts")
+	if err != nil {
+		slog.Warn("artifact storage not available", "error", err)
+	} else {
+		svc.SetArtifactStore(localStore)
+		slog.Info("artifact storage: local", "path", "./data/artifacts")
+	}
+
 	// Router
 	r := buildRouter(cfg, pool, queries, svc)
 
@@ -349,6 +362,17 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Post("/runs/{id}/kill", svc.KillRun)
 			r.Post("/runs/{id}/replay", svc.ReplayRun)
 			r.Get("/runs/{id}/output", svc.GetRunOutput)
+			r.Patch("/runs/{id}/result", svc.SetRunResult)
+			r.Get("/runs/{id}/result", svc.GetRunResult)
+			r.Post("/runs/{id}/artifacts", svc.UploadArtifact)
+			r.Get("/runs/{id}/artifacts", svc.ListArtifacts)
+			r.Get("/runs/{id}/artifacts/{name}", svc.DownloadArtifact)
+
+			// Secrets
+			r.Get("/secrets", svc.ListSecrets)
+			r.Post("/secrets", svc.CreateSecretHandler)
+			r.Put("/secrets/{name}", svc.UpdateSecretHandler)
+			r.Delete("/secrets/{name}", svc.DeleteSecretHandler)
 
 			// Queues
 			r.Get("/queues", svc.ListQueues)

@@ -115,6 +115,20 @@ class CronControl {
   createApiKey(data) { return this._request('POST', '/api-keys', { body: data }); }
   deleteApiKey(id) { return this._request('DELETE', `/api-keys/${id}`); }
 
+  // -- Run Result --
+  setResult(runId, data) { return this._request('PATCH', `/runs/${runId}/result`, { body: data }); }
+  getResult(runId) { return this._request('GET', `/runs/${runId}/result`); }
+
+  // -- Secrets --
+  listSecrets() { return this._request('GET', '/secrets'); }
+  createSecret(name, value) { return this._request('POST', '/secrets', { body: { name, value } }); }
+  updateSecret(name, value) { return this._request('PUT', `/secrets/${name}`, { body: { value } }); }
+  deleteSecret(name) { return this._request('DELETE', `/secrets/${name}`); }
+
+  // -- Artifacts --
+  listArtifacts(runId) { return this._request('GET', `/runs/${runId}/artifacts`); }
+  getArtifactUrl(runId, name) { return `${this.baseUrl}/api/v1/runs/${runId}/artifacts/${name}`; }
+
   // -- Heartbeat (no auth) --
   heartbeat(runId, total, current, message = '') {
     return this._request('POST', '/heartbeat', {

@@ -272,6 +272,47 @@ func (c *Client) DeleteAPIKey(ctx context.Context, id string) error {
 	return err
 }
 
+// -- Run Result --
+
+func (c *Client) SetResult(ctx context.Context, runID string, data any) error {
+	_, err := c.do(ctx, "PATCH", "/runs/"+runID+"/result", data, nil)
+	return err
+}
+
+func (c *Client) GetResult(ctx context.Context, runID string) (*SingleResponse, error) {
+	return c.single(ctx, "GET", "/runs/"+runID+"/result", nil, nil)
+}
+
+// -- Secrets --
+
+func (c *Client) ListSecrets(ctx context.Context) (*ListResponse, error) {
+	return c.list(ctx, "/secrets", nil)
+}
+
+func (c *Client) CreateSecret(ctx context.Context, name, value string) (*SingleResponse, error) {
+	return c.single(ctx, "POST", "/secrets", map[string]any{"name": name, "value": value}, nil)
+}
+
+func (c *Client) UpdateSecret(ctx context.Context, name, value string) error {
+	_, err := c.do(ctx, "PUT", "/secrets/"+name, map[string]any{"value": value}, nil)
+	return err
+}
+
+func (c *Client) DeleteSecret(ctx context.Context, name string) error {
+	_, err := c.do(ctx, "DELETE", "/secrets/"+name, nil, nil)
+	return err
+}
+
+// -- Artifacts --
+
+func (c *Client) ListArtifacts(ctx context.Context, runID string) (*ListResponse, error) {
+	return c.list(ctx, "/runs/"+runID+"/artifacts", nil)
+}
+
+func (c *Client) GetArtifactURL(runID, name string) string {
+	return c.BaseURL + "/api/v1/runs/" + runID + "/artifacts/" + name
+}
+
 // -- Heartbeat (no auth) --
 
 func (c *Client) Heartbeat(ctx context.Context, runID string, total, current int, message string) error {

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,20 +27,24 @@ import (
 	"github.com/croncontrol/croncontrol/internal/dbutil"
 	"github.com/croncontrol/croncontrol/internal/metrics"
 	"github.com/croncontrol/croncontrol/internal/dependency"
+	"github.com/croncontrol/croncontrol/internal/crypto"
 	"github.com/croncontrol/croncontrol/internal/executor"
 	"github.com/croncontrol/croncontrol/internal/id"
 	"github.com/croncontrol/croncontrol/internal/notifier"
 	"github.com/croncontrol/croncontrol/internal/runstate"
+	"github.com/croncontrol/croncontrol/internal/storage"
 )
 
 // Service holds all handler dependencies.
 type Service struct {
-	queries      *db.Queries
-	pool         *pgxpool.Pool
-	orchestrator *executor.Orchestrator
-	depResolver  *dependency.Resolver
-	notifier     *notifier.Notifier
-	googleAuth   *auth.GoogleAuthenticator
+	queries        *db.Queries
+	pool           *pgxpool.Pool
+	orchestrator   *executor.Orchestrator
+	depResolver    *dependency.Resolver
+	notifier       *notifier.Notifier
+	googleAuth     *auth.GoogleAuthenticator
+	artifactStore  storage.Backend
+	encryptionKey  []byte
 }
 
 // NewService creates a new handler service.
@@ -50,6 +55,16 @@ func NewService(q *db.Queries, pool *pgxpool.Pool, orch *executor.Orchestrator, 
 // SetGoogleAuth configures Google OAuth support. Nil disables it.
 func (s *Service) SetGoogleAuth(g *auth.GoogleAuthenticator) {
 	s.googleAuth = g
+}
+
+// SetArtifactStore configures the artifact storage backend.
+func (s *Service) SetArtifactStore(store storage.Backend) {
+	s.artifactStore = store
+}
+
+// SetEncryptionKey sets the key used for encrypting workspace secrets.
+func (s *Service) SetEncryptionKey(key []byte) {
+	s.encryptionKey = key
 }
 
 // ============================================================================
@@ -1758,6 +1773,217 @@ func (s *Service) DeleteK8sCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// ============================================================================
+// ============================================================================
+// Run Result
+// ============================================================================
+
+func (s *Service) SetRunResult(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1024*1024)) // 1MB max
+	if err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Failed to read body", "")
+		return
+	}
+	if !json.Valid(body) {
+		writeError(w, 400, "VALIDATION_ERROR", "Body must be valid JSON", "")
+		return
+	}
+	if err := s.queries.SetRunResult(r.Context(), runID, body); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to set result", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "ok"}})
+}
+
+func (s *Service) GetRunResult(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	result, err := s.queries.GetRunResult(r.Context(), runID)
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
+	if result.Result == nil {
+		writeJSON(w, 200, map[string]any{"data": nil})
+		return
+	}
+	var parsed any
+	json.Unmarshal(result.Result, &parsed)
+	writeJSON(w, 200, map[string]any{"data": parsed})
+}
+
+// ============================================================================
+// Workspace Secrets
+// ============================================================================
+
+func (s *Service) ListSecrets(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	secrets, err := s.queries.ListSecretsByWorkspace(r.Context(), wsID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list secrets", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": secrets, "meta": map[string]any{"total": len(secrets)}})
+}
+
+func (s *Service) CreateSecretHandler(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Value == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "name and value are required", "")
+		return
+	}
+
+	encrypted, err := crypto.Encrypt([]byte(req.Value), s.encryptionKey)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to encrypt secret", "")
+		return
+	}
+
+	secret, err := s.queries.CreateSecret(r.Context(), db.CreateSecretParams{
+		ID:          id.New("sec_"),
+		WorkspaceID: wsID,
+		Name:        req.Name,
+		ValueEnc:    encrypted,
+	})
+	if err != nil {
+		writeError(w, 409, "CONFLICT", "Secret with this name already exists", "")
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": secret})
+}
+
+func (s *Service) UpdateSecretHandler(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	name := chi.URLParam(r, "name")
+	var req struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Value == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "value is required", "")
+		return
+	}
+
+	encrypted, err := crypto.Encrypt([]byte(req.Value), s.encryptionKey)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to encrypt secret", "")
+		return
+	}
+
+	if err := s.queries.UpdateSecret(r.Context(), wsID, name, encrypted); err != nil {
+		writeError(w, 404, "NOT_FOUND", "Secret not found", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "updated"}})
+}
+
+func (s *Service) DeleteSecretHandler(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	name := chi.URLParam(r, "name")
+	deleted, err := s.queries.DeleteSecret(r.Context(), db.DeleteSecretParams{WorkspaceID: wsID, Name: name})
+	if err != nil || deleted == 0 {
+		writeError(w, 404, "NOT_FOUND", "Secret not found", "")
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// ============================================================================
+// Run Artifacts
+// ============================================================================
+
+func (s *Service) UploadArtifact(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	runID := chi.URLParam(r, "id")
+
+	r.ParseMultipartForm(32 << 20) // 32MB max
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "file is required (multipart form)", "")
+		return
+	}
+	defer file.Close()
+
+	name := header.Filename
+	if n := r.FormValue("name"); n != "" {
+		name = n
+	}
+
+	storageKey := fmt.Sprintf("%s/%s/%s", wsID, runID, name)
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	if s.artifactStore == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Artifact storage not configured", "Set CC_ARTIFACTS_BACKEND")
+		return
+	}
+
+	if err := s.artifactStore.Upload(r.Context(), storageKey, file, contentType); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to upload artifact", err.Error())
+		return
+	}
+
+	size := header.Size
+	artifact, err := s.queries.CreateArtifact(r.Context(), db.CreateArtifactParams{
+		ID:          id.New("art_"),
+		RunID:       runID,
+		WorkspaceID: wsID,
+		Name:        name,
+		ContentType: &contentType,
+		SizeBytes:   &size,
+		StorageKey:  storageKey,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to save artifact metadata", err.Error())
+		return
+	}
+	writeJSON(w, 201, map[string]any{"data": artifact})
+}
+
+func (s *Service) ListArtifacts(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	artifacts, err := s.queries.ListArtifactsByRun(r.Context(), runID)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list artifacts", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": artifacts, "meta": map[string]any{"total": len(artifacts)}})
+}
+
+func (s *Service) DownloadArtifact(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	name := chi.URLParam(r, "name")
+
+	artifact, err := s.queries.GetArtifact(r.Context(), runID, name)
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Artifact not found", "")
+		return
+	}
+
+	if s.artifactStore == nil {
+		writeError(w, 501, "NOT_IMPLEMENTED", "Artifact storage not configured", "")
+		return
+	}
+
+	reader, err := s.artifactStore.Download(r.Context(), artifact.StorageKey)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to download artifact", err.Error())
+		return
+	}
+	defer reader.Close()
+
+	if artifact.ContentType != nil {
+		w.Header().Set("Content-Type", *artifact.ContentType)
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	io.Copy(w, reader)
 }
 
 // ============================================================================

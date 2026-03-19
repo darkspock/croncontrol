@@ -161,6 +161,53 @@ class CronControl:
     def delete_api_key(self, key_id: str) -> None:
         self._request("DELETE", f"/api-keys/{key_id}")
 
+    # -- Run Result --
+    def set_result(self, run_id: str, data: Any) -> None:
+        self._request("PATCH", f"/runs/{run_id}/result", body=data)
+
+    def get_result(self, run_id: str) -> Any:
+        return self._request("GET", f"/runs/{run_id}/result")
+
+    # -- Secrets --
+    def list_secrets(self) -> dict:
+        return self._request("GET", "/secrets")
+
+    def create_secret(self, name: str, value: str) -> dict:
+        return self._request("POST", "/secrets", body={"name": name, "value": value})
+
+    def update_secret(self, name: str, value: str) -> None:
+        self._request("PUT", f"/secrets/{name}", body={"value": value})
+
+    def delete_secret(self, name: str) -> None:
+        self._request("DELETE", f"/secrets/{name}")
+
+    # -- Artifacts --
+    def upload_artifact(self, run_id: str, name: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> dict:
+        """Upload a file artifact to a run. Uses multipart form upload."""
+        import urllib.request
+        boundary = "----CronControlBoundary"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="name"\r\n\r\n{name}\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode() + file_bytes + f"\r\n--{boundary}--\r\n".encode()
+
+        url = f"{self.base_url}/api/v1/runs/{run_id}/artifacts"
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read())
+
+    def list_artifacts(self, run_id: str) -> dict:
+        return self._request("GET", f"/runs/{run_id}/artifacts")
+
+    def get_artifact_url(self, run_id: str, name: str) -> str:
+        return f"{self.base_url}/api/v1/runs/{run_id}/artifacts/{name}"
+
     # -- Heartbeat --
     def heartbeat(self, run_id: str, total: int, current: int, message: str = "") -> None:
         """Report progress for a running execution. No auth required."""
