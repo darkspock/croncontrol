@@ -1,15 +1,32 @@
 ---
-// Orchestra animation — interactive. Director hub + "Musicians" orbiting.
-// Hover any node to see a popup describing what it does.
+// Orchestra animation — interactive with Groq-powered chat simulation.
+// Hover nodes for tooltips. Click an AgentNode to open a simulated chat.
 ---
 
 <div class="relative w-full h-full">
   <canvas id="orchestra-network" class="absolute inset-0 w-full h-full"></canvas>
+  <!-- Tooltip -->
   <div id="orchestra-tooltip" class="fixed z-50 pointer-events-none opacity-0 transition-opacity duration-150 px-3 py-2 rounded-lg border border-indigo-500/20 bg-[#0c0c10]/95 backdrop-blur-sm shadow-xl shadow-black/40 max-w-52" style="transform: translate(-50%, -100%) translateY(-12px);">
     <p id="tt-role" class="text-[10px] font-mono font-semibold text-indigo-400 uppercase tracking-wider mb-0.5"></p>
     <p id="tt-name" class="text-xs font-semibold text-white mb-1"></p>
     <p id="tt-desc" class="text-[11px] text-zinc-400 leading-relaxed"></p>
     <p id="tt-status" class="text-[10px] font-mono mt-1.5 flex items-center gap-1.5"></p>
+  </div>
+  <!-- Chat panel -->
+  <div id="chat-panel" class="absolute right-0 top-0 bottom-0 w-[280px] bg-[#0c0c10]/95 backdrop-blur-xl border-l border-indigo-500/15 flex flex-col z-40 translate-x-full transition-transform duration-300" style="border-radius: 0 0.75rem 0.75rem 0;">
+    <div class="flex items-center justify-between px-3 py-2.5 border-b border-zinc-800/50">
+      <div class="flex items-center gap-2">
+        <span id="chat-dot" class="w-2 h-2 rounded-full bg-indigo-400"></span>
+        <span id="chat-title" class="text-xs font-semibold text-white truncate"></span>
+      </div>
+      <button id="chat-close" class="p-1 rounded hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-white">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="chat-messages" class="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 text-[11px] leading-relaxed scrollbar-thin"></div>
+    <div class="px-3 py-2 border-t border-zinc-800/50">
+      <p class="text-[10px] text-zinc-600 text-center">Simulated conversation · Powered by Groq</p>
+    </div>
   </div>
 </div>
 
@@ -20,11 +37,18 @@
   const ttName = document.getElementById('tt-name')!;
   const ttDesc = document.getElementById('tt-desc')!;
   const ttStatus = document.getElementById('tt-status')!;
+  const chatPanel = document.getElementById('chat-panel') as HTMLDivElement;
+  const chatTitle = document.getElementById('chat-title')!;
+  const chatMessages = document.getElementById('chat-messages')!;
+  const chatClose = document.getElementById('chat-close')!;
+  const chatDot = document.getElementById('chat-dot')!;
   if (!canvas) throw new Error('canvas not found');
   const ctx = canvas.getContext('2d')!;
 
   let W = 0, H = 0;
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let chatOpen = false;
+  let chatNodeIdx = -1;
 
   function resize() {
     const rect = canvas.parentElement!.getBoundingClientRect();
@@ -38,37 +62,29 @@
     layoutNodes();
   }
 
-  // --- Node info for tooltips ---
   const nodeInfo = [
-    { role: 'Director', name: 'AI Director', desc: 'Reads the full score, decides the next worker to execute, or asks a human for input.', status: '●  Coordinating 3 active movements', statusColor: '#818cf8' },
-    { role: 'AgentNode', name: 'Data Scraper', desc: 'Fetches product data from external APIs and returns structured JSON results.', status: '●  Running — 67% progress', statusColor: '#34d399' },
-    { role: 'AgentNode', name: 'Validator', desc: 'Checks scraped data for anomalies, duplicates, and schema compliance.', status: '●  Idle — waiting for directive', statusColor: '#a1a1aa' },
-    { role: 'AgentNode', name: 'Transform Pipeline', desc: 'Normalizes, enriches, and transforms data for downstream consumers.', status: '●  Running — 42% progress', statusColor: '#34d399' },
-    { role: 'AgentNode', name: 'Notifier', desc: 'Sends Slack messages, emails, or webhook calls when conditions are met.', status: '●  Idle — 12 notifications sent', statusColor: '#a1a1aa' },
-    { role: 'AgentNode', name: 'Database Writer', desc: 'Upserts validated records into PostgreSQL with conflict resolution.', status: '●  Running — 890/1200 rows', statusColor: '#34d399' },
-    { role: 'AgentNode', name: 'Report Generator', desc: 'Creates PDF/CSV summaries and uploads them as run artifacts.', status: '●  Idle — last report 2m ago', statusColor: '#a1a1aa' },
-    { role: 'AgentNode', name: 'Cleanup', desc: 'Archives old records, deletes expired data, frees storage.', status: '●  Scheduled — next run in 4m', statusColor: '#fbbf24' },
-    { role: 'AgentNode', name: 'Health Checker', desc: 'Pings external services, verifies SSL certs, checks DNS.', status: '●  Running — 8/10 checks passed', statusColor: '#34d399' },
-    { role: 'AgentNode', name: 'ML Inference', desc: 'Runs anomaly detection model on incoming data batches.', status: '●  Idle — GPU container standby', statusColor: '#a1a1aa' },
+    { role: 'Director', name: 'AI Director', desc: 'Reads the full score, decides the next worker to execute, or asks a human for input.', status: '●  Coordinating 3 active movements', statusColor: '#818cf8', context: 'You are the AI Director of an orchestra called "product-cleanup". You coordinate AgentNodes (workers) to scrape, validate, and clean product data. You speak concisely in 1-2 sentences.' },
+    { role: 'AgentNode', name: 'Data Scraper', desc: 'Fetches product data from external APIs and returns structured JSON results.', status: '●  Running — 67% progress', statusColor: '#34d399', context: 'You are "Data Scraper", an AgentNode in a CronControl orchestra. You fetch product data from APIs. You just scraped 150 products and found some anomalies. Respond concisely in 1-2 sentences.' },
+    { role: 'AgentNode', name: 'Validator', desc: 'Checks scraped data for anomalies, duplicates, and schema compliance.', status: '●  Idle — waiting for directive', statusColor: '#a1a1aa', context: 'You are "Validator", an AgentNode. You check data for anomalies and schema issues. You recently found 30 invalid records out of 150. Respond concisely.' },
+    { role: 'AgentNode', name: 'Transform Pipeline', desc: 'Normalizes, enriches, and transforms data for downstream consumers.', status: '●  Running — 42% progress', statusColor: '#34d399', context: 'You are "Transform Pipeline", an AgentNode. You normalize and enrich product data. Currently processing a batch of 120 valid records. Respond concisely.' },
+    { role: 'AgentNode', name: 'Notifier', desc: 'Sends Slack messages, emails, or webhook calls when conditions are met.', status: '●  Idle — 12 notifications sent', statusColor: '#a1a1aa', context: 'You are "Notifier", an AgentNode. You send Slack and email notifications. You have sent 12 notifications today. Respond concisely.' },
+    { role: 'AgentNode', name: 'Database Writer', desc: 'Upserts validated records into PostgreSQL with conflict resolution.', status: '●  Running — 890/1200 rows', statusColor: '#34d399', context: 'You are "Database Writer", an AgentNode. You upsert records into PostgreSQL. Currently at 890/1200 rows with 3 conflict resolutions. Respond concisely.' },
+    { role: 'AgentNode', name: 'Report Generator', desc: 'Creates PDF/CSV summaries and uploads them as run artifacts.', status: '●  Idle — last report 2m ago', statusColor: '#a1a1aa', context: 'You are "Report Generator", an AgentNode. You create PDF/CSV reports. Last report was generated 2 minutes ago with 1200 rows. Respond concisely.' },
+    { role: 'AgentNode', name: 'Cleanup', desc: 'Archives old records, deletes expired data, frees storage.', status: '●  Scheduled — next run in 4m', statusColor: '#fbbf24', context: 'You are "Cleanup", an AgentNode. You archive old records and free storage. Next scheduled run in 4 minutes. 2.3GB freed last run. Respond concisely.' },
+    { role: 'AgentNode', name: 'Health Checker', desc: 'Pings external services, verifies SSL certs, checks DNS.', status: '●  Running — 8/10 checks passed', statusColor: '#34d399', context: 'You are "Health Checker", an AgentNode. You ping services and check SSL. 8/10 checks passed, 2 endpoints have high latency. Respond concisely.' },
+    { role: 'AgentNode', name: 'ML Inference', desc: 'Runs anomaly detection model on incoming data batches.', status: '●  Idle — GPU container standby', statusColor: '#a1a1aa', context: 'You are "ML Inference", an AgentNode. You run anomaly detection models. GPU container on standby, last batch detected 5 anomalies. Respond concisely.' },
   ];
 
   // --- Nodes ---
   interface OrchestraNode {
-    x: number; y: number;
-    baseR: number; r: number;
-    phase: number; speed: number;
-    hue: number; sat: number; light: number;
-    pulsePhase: number;
-    role: 'director' | 'musician';
-    orbitAngle: number;
-    orbitRadius: number;
-    orbitSpeed: number;
-    idx: number;
+    x: number; y: number; baseR: number; r: number;
+    phase: number; speed: number; hue: number; sat: number; light: number;
+    pulsePhase: number; role: 'director' | 'musician';
+    orbitAngle: number; orbitRadius: number; orbitSpeed: number; idx: number;
   }
 
   const MUSICIAN_COUNT = 9;
   const nodes: OrchestraNode[] = [];
-
   const musicianColors = [
     { h: 200, s: 75, l: 55 }, { h: 160, s: 60, l: 50 }, { h: 270, s: 60, l: 55 },
     { h: 220, s: 80, l: 60 }, { h: 320, s: 55, l: 55 }, { h: 180, s: 65, l: 50 },
@@ -79,48 +95,31 @@
     nodes.length = 0;
     const cx = W / 2, cy = H / 2;
     const orbitR = Math.min(W, H) * 0.32;
-
-    nodes.push({
-      x: cx, y: cy, baseR: 38, r: 38, phase: 0, speed: 0.004,
-      hue: 235, sat: 85, light: 65, pulsePhase: 0, role: 'director',
-      orbitAngle: 0, orbitRadius: 0, orbitSpeed: 0, idx: 0,
-    });
-
+    nodes.push({ x: cx, y: cy, baseR: 38, r: 38, phase: 0, speed: 0.004, hue: 235, sat: 85, light: 65, pulsePhase: 0, role: 'director', orbitAngle: 0, orbitRadius: 0, orbitSpeed: 0, idx: 0 });
     for (let i = 0; i < MUSICIAN_COUNT; i++) {
       const angle = (i / MUSICIAN_COUNT) * Math.PI * 2 - Math.PI / 2;
-      const p = musicianColors[i % musicianColors.length];
-      const rV = 0.88 + Math.random() * 0.24;
-      nodes.push({
-        x: cx + Math.cos(angle) * orbitR * rV,
-        y: cy + Math.sin(angle) * orbitR * rV,
-        baseR: 16 + Math.random() * 8, r: 0, phase: Math.random() * Math.PI * 2,
-        speed: 0.005 + Math.random() * 0.003,
-        hue: p.h, sat: p.s, light: p.l, pulsePhase: Math.random() * Math.PI * 2,
-        role: 'musician', orbitAngle: angle, orbitRadius: orbitR * rV,
-        orbitSpeed: 0.0003 + Math.random() * 0.0004, idx: i + 1,
-      });
+      const p = musicianColors[i]; const rV = 0.88 + Math.random() * 0.24;
+      nodes.push({ x: cx + Math.cos(angle) * orbitR * rV, y: cy + Math.sin(angle) * orbitR * rV, baseR: 16 + Math.random() * 8, r: 0, phase: Math.random() * Math.PI * 2, speed: 0.005 + Math.random() * 0.003, hue: p.h, sat: p.s, light: p.l, pulsePhase: Math.random() * Math.PI * 2, role: 'musician', orbitAngle: angle, orbitRadius: orbitR * rV, orbitSpeed: 0.0003 + Math.random() * 0.0004, idx: i + 1 });
     }
   }
   layoutNodes();
 
-  // --- Hover ---
+  // --- Hover + Click ---
   let hoveredIdx = -1;
   let mouseX = 0, mouseY = 0;
 
-  canvas.addEventListener('mousemove', (e) => {
+  function findNode(ex: number, ey: number) {
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    mouseX = e.clientX;
-    mouseY = e.clientY;
-
-    let found = -1;
+    const mx = ex - rect.left, my = ey - rect.top;
     for (let i = nodes.length - 1; i >= 0; i--) {
-      const n = nodes[i];
-      const hitR = n.r * 1.8;
-      if (Math.hypot(mx - n.x, my - n.y) < hitR) { found = i; break; }
+      if (Math.hypot(mx - nodes[i].x, my - nodes[i].y) < nodes[i].r * 1.8) return i;
     }
+    return -1;
+  }
 
+  canvas.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    const found = findNode(e.clientX, e.clientY);
     if (found !== hoveredIdx) {
       hoveredIdx = found;
       if (found >= 0) {
@@ -136,24 +135,126 @@
         tooltip.style.opacity = '0';
       }
     }
-
-    if (hoveredIdx >= 0) {
-      tooltip.style.left = mouseX + 'px';
-      tooltip.style.top = mouseY + 'px';
-    }
+    if (hoveredIdx >= 0) { tooltip.style.left = mouseX + 'px'; tooltip.style.top = mouseY + 'px'; }
   });
 
-  canvas.addEventListener('mouseleave', () => {
-    hoveredIdx = -1;
-    canvas.style.cursor = 'default';
+  canvas.addEventListener('mouseleave', () => { hoveredIdx = -1; canvas.style.cursor = 'default'; tooltip.style.opacity = '0'; });
+
+  canvas.addEventListener('click', (e) => {
+    const found = findNode(e.clientX, e.clientY);
+    if (found >= 0) openChat(found);
+  });
+
+  chatClose.addEventListener('click', closeChat);
+
+  // --- Chat ---
+  const GROQ_KEY = 'REMOVED';
+  let chatHistory: { role: string; content: string }[] = [];
+  let chatAbort: AbortController | null = null;
+
+  function openChat(idx: number) {
+    chatNodeIdx = idx;
+    chatOpen = true;
+    chatPanel.classList.remove('translate-x-full');
+    const info = nodeInfo[idx];
+    chatTitle.textContent = info.name;
+    chatDot.style.backgroundColor = info.statusColor;
+    chatMessages.innerHTML = '';
+    chatHistory = [];
     tooltip.style.opacity = '0';
-  });
+
+    // Initial exchange: Director asks the node for status
+    const directorMsg = idx === 0
+      ? 'Orchestra "product-cleanup" is active. 3 AgentNodes running, 2 idle. Awaiting validator results before proceeding.'
+      : `Director → ${info.name}: Report your current status.`;
+
+    addMessage('director', directorMsg);
+
+    // Call Groq for the node's response
+    chatHistory = [
+      { role: 'system', content: info.context + ' You are in a live orchestra chat. The AI Director just asked for your status. Respond naturally as this agent would.' },
+      { role: 'user', content: directorMsg },
+    ];
+    callGroq();
+  }
+
+  function closeChat() {
+    chatOpen = false;
+    chatPanel.classList.add('translate-x-full');
+    chatNodeIdx = -1;
+    if (chatAbort) { chatAbort.abort(); chatAbort = null; }
+  }
+
+  function addMessage(sender: 'director' | 'agent' | 'system', text: string) {
+    const div = document.createElement('div');
+    if (sender === 'director') {
+      div.className = 'flex gap-2';
+      div.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center mt-0.5"><span class="text-[8px] font-bold text-indigo-400">D</span></span><div class="flex-1"><p class="text-[10px] font-semibold text-indigo-400 mb-0.5">Director</p><p class="text-zinc-300">${esc(text)}</p></div>`;
+    } else if (sender === 'agent') {
+      const info = nodeInfo[chatNodeIdx];
+      div.className = 'flex gap-2';
+      div.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center mt-0.5"><span class="text-[8px] font-bold text-emerald-400">A</span></span><div class="flex-1"><p class="text-[10px] font-semibold text-emerald-400 mb-0.5">${esc(info.name)}</p><p class="text-zinc-300">${esc(text)}</p></div>`;
+    } else {
+      div.className = 'text-center';
+      div.innerHTML = `<p class="text-zinc-600 text-[10px] italic">${esc(text)}</p>`;
+    }
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function esc(s: string) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  async function callGroq() {
+    if (chatAbort) chatAbort.abort();
+    chatAbort = new AbortController();
+
+    // Show typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'flex gap-2 items-center';
+    typing.id = 'typing';
+    typing.innerHTML = `<span class="shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center"><span class="text-[8px] font-bold text-emerald-400">A</span></span><span class="text-zinc-500 text-[10px]">typing...</span>`;
+    chatMessages.appendChild(typing);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: chatHistory, max_tokens: 150, temperature: 0.7 }),
+        signal: chatAbort.signal,
+      });
+      const data = await res.json();
+      typing.remove();
+      const reply = data.choices?.[0]?.message?.content || 'No response.';
+      addMessage('agent', reply);
+      chatHistory.push({ role: 'assistant', content: reply });
+
+      // After first response, Director follows up after a delay
+      if (chatHistory.length <= 3) {
+        setTimeout(() => {
+          if (!chatOpen || chatNodeIdx < 0) return;
+          const followUp = chatNodeIdx === 0
+            ? 'Checking budget: 62% used. 3 movements remaining within limits.'
+            : `Director → ${nodeInfo[chatNodeIdx].name}: Acknowledged. Proceed with current task. Report when complete.`;
+          addMessage('director', followUp);
+          chatHistory.push({ role: 'user', content: followUp });
+          callGroq();
+        }, 2000);
+      } else if (chatHistory.length <= 5) {
+        // One more exchange
+        setTimeout(() => {
+          if (!chatOpen || chatNodeIdx < 0) return;
+          addMessage('system', 'Movement #4 completed successfully.');
+        }, 2500);
+      }
+    } catch (e: any) {
+      typing.remove();
+      if (e.name !== 'AbortError') addMessage('system', 'Connection error.');
+    }
+  }
 
   // --- Packets ---
-  interface Packet {
-    from: number; to: number; t: number; speed: number; hue: number;
-    cx: number; cy: number; type: 'directive' | 'result' | 'lateral';
-  }
+  interface Packet { from: number; to: number; t: number; speed: number; hue: number; cx: number; cy: number; type: 'directive' | 'result' | 'lateral'; }
   const packets: Packet[] = [];
   let nextD = 0, nextR = 0, nextL = 0;
 
@@ -166,76 +267,34 @@
   }
 
   function spawnPackets(now: number) {
-    if (now > nextD) {
-      nextD = now + 250 + Math.random() * 350;
-      const to = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
-      const c = bezCtrl(nodes[0], nodes[to], 0.15);
-      packets.push({ from: 0, to, t: 0, speed: 0.012 + Math.random() * 0.006, hue: 235, ...c, type: 'directive' });
-    }
-    if (now > nextR) {
-      nextR = now + 400 + Math.random() * 500;
-      const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
-      const c = bezCtrl(nodes[from], nodes[0], 0.15);
-      packets.push({ from, to: 0, t: 0, speed: 0.01 + Math.random() * 0.005, hue: nodes[from].hue, ...c, type: 'result' });
-    }
-    if (now > nextL) {
-      nextL = now + 600 + Math.random() * 700;
-      const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT);
-      let to = 1 + Math.floor(Math.random() * (MUSICIAN_COUNT - 1));
-      if (to >= from) to++;
-      if (to > MUSICIAN_COUNT) to = 1;
-      const a = nodes[from], b = nodes[to];
-      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      packets.push({ from, to, t: 0, speed: 0.008 + Math.random() * 0.004, hue: a.hue,
-        cx: mx + (nodes[0].x - mx) * 0.3, cy: my + (nodes[0].y - my) * 0.3, type: 'lateral' });
-    }
+    if (now > nextD) { nextD = now + 250 + Math.random() * 350; const to = 1 + Math.floor(Math.random() * MUSICIAN_COUNT); const c = bezCtrl(nodes[0], nodes[to], 0.15); packets.push({ from: 0, to, t: 0, speed: 0.012 + Math.random() * 0.006, hue: 235, ...c, type: 'directive' }); }
+    if (now > nextR) { nextR = now + 400 + Math.random() * 500; const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT); const c = bezCtrl(nodes[from], nodes[0], 0.15); packets.push({ from, to: 0, t: 0, speed: 0.01 + Math.random() * 0.005, hue: nodes[from].hue, ...c, type: 'result' }); }
+    if (now > nextL) { nextL = now + 600 + Math.random() * 700; const from = 1 + Math.floor(Math.random() * MUSICIAN_COUNT); let to = 1 + Math.floor(Math.random() * (MUSICIAN_COUNT - 1)); if (to >= from) to++; if (to > MUSICIAN_COUNT) to = 1; const a = nodes[from], b = nodes[to]; const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; packets.push({ from, to, t: 0, speed: 0.008 + Math.random() * 0.004, hue: a.hue, cx: mx + (nodes[0].x - mx) * 0.3, cy: my + (nodes[0].y - my) * 0.3, type: 'lateral' }); }
   }
 
-  function quadBez(ax: number, ay: number, cx: number, cy: number, bx: number, by: number, t: number) {
-    const u = 1 - t;
-    return { x: u*u*ax + 2*u*t*cx + t*t*bx, y: u*u*ay + 2*u*t*cy + t*t*by };
-  }
+  function quadBez(ax: number, ay: number, cx: number, cy: number, bx: number, by: number, t: number) { const u = 1 - t; return { x: u*u*ax + 2*u*t*cx + t*t*bx, y: u*u*ay + 2*u*t*cy + t*t*by }; }
 
   // --- Draw ---
   function draw(now: number) {
     ctx.clearRect(0, 0, W, H);
     const cx = W / 2, cy = H / 2;
 
-    // Update positions
-    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
-      const n = nodes[i];
-      n.orbitAngle += n.orbitSpeed;
-      n.x = cx + Math.cos(n.orbitAngle) * n.orbitRadius;
-      n.y = cy + Math.sin(n.orbitAngle) * n.orbitRadius;
-    }
-    for (const n of nodes) {
-      n.phase += n.speed;
-      n.r = n.baseR + Math.sin(n.phase) * n.baseR * 0.2;
-      n.pulsePhase += 0.02;
-    }
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) { const n = nodes[i]; n.orbitAngle += n.orbitSpeed; n.x = cx + Math.cos(n.orbitAngle) * n.orbitRadius; n.y = cy + Math.sin(n.orbitAngle) * n.orbitRadius; }
+    for (const n of nodes) { n.phase += n.speed; n.r = n.baseR + Math.sin(n.phase) * n.baseR * 0.2; n.pulsePhase += 0.02; }
 
     // Connections
     const d = nodes[0];
-    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
-      const m = nodes[i];
-      const isHovered = hoveredIdx === 0 || hoveredIdx === i;
-      ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(m.x, m.y);
-      ctx.strokeStyle = `hsla(235, 60%, 60%, ${isHovered ? 0.15 : 0.05})`;
-      ctx.lineWidth = isHovered ? 1.5 : 0.8; ctx.stroke();
-    }
-    for (let i = 1; i <= MUSICIAN_COUNT; i++) {
-      const next = i < MUSICIAN_COUNT ? i + 1 : 1;
-      ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[next].x, nodes[next].y);
-      ctx.strokeStyle = `hsla(200, 40%, 50%, 0.03)`; ctx.lineWidth = 0.5; ctx.stroke();
-    }
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) { const m = nodes[i]; const isH = hoveredIdx === 0 || hoveredIdx === i || chatNodeIdx === i; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(m.x, m.y); ctx.strokeStyle = `hsla(235, 60%, 60%, ${isH ? 0.15 : 0.05})`; ctx.lineWidth = isH ? 1.5 : 0.8; ctx.stroke(); }
+    for (let i = 1; i <= MUSICIAN_COUNT; i++) { const next = i < MUSICIAN_COUNT ? i + 1 : 1; ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[next].x, nodes[next].y); ctx.strokeStyle = `hsla(200, 40%, 50%, 0.03)`; ctx.lineWidth = 0.5; ctx.stroke(); }
 
     // Nodes
     for (const n of nodes) {
       const pulse = 0.5 + 0.5 * Math.sin(n.pulsePhase);
       const isDir = n.role === 'director';
       const isHov = hoveredIdx === n.idx;
+      const isChat = chatNodeIdx === n.idx;
       const glowR = n.r * (isDir ? 3.0 : 2.2);
-      const alphaBoost = isHov ? 1.6 : 1;
+      const alphaBoost = (isHov || isChat) ? 1.6 : 1;
       const cAlpha = (isDir ? 0.18 + pulse * 0.08 : 0.10 + pulse * 0.05) * alphaBoost;
 
       const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
@@ -249,49 +308,25 @@
       core.addColorStop(1, `hsla(${n.hue}, ${n.sat}%, ${n.light}%, 0)`);
       ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.5, 0, Math.PI * 2); ctx.fillStyle = core; ctx.fill();
 
-      if (isDir) {
-        ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.9, 0, Math.PI * 2);
-        ctx.strokeStyle = `hsla(${n.hue}, ${n.sat}%, ${n.light}%, ${(0.08 + pulse * 0.04) * alphaBoost})`;
-        ctx.lineWidth = 1.5; ctx.stroke();
-      }
-
-      // Hover ring
-      if (isHov) {
-        ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 1.3, 0, Math.PI * 2);
-        ctx.strokeStyle = `hsla(${n.hue}, ${n.sat}%, ${n.light + 20}%, 0.3)`;
-        ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
-      }
+      if (isDir) { ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.9, 0, Math.PI * 2); ctx.strokeStyle = `hsla(${n.hue}, ${n.sat}%, ${n.light}%, ${(0.08 + pulse * 0.04) * alphaBoost})`; ctx.lineWidth = 1.5; ctx.stroke(); }
+      if (isHov || isChat) { ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 1.3, 0, Math.PI * 2); ctx.strokeStyle = `hsla(${n.hue}, ${n.sat}%, ${n.light + 20}%, 0.3)`; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]); }
     }
 
     // Packets
     spawnPackets(now);
     for (let i = packets.length - 1; i >= 0; i--) {
-      const p = packets[i];
-      p.t += p.speed;
+      const p = packets[i]; p.t += p.speed;
       if (p.t >= 1) { nodes[p.to].pulsePhase = 0; packets.splice(i, 1); continue; }
-      const a = nodes[p.from], b = nodes[p.to];
-      const pos = quadBez(a.x, a.y, p.cx, p.cy, b.x, b.y, p.t);
-      const tLen = p.type === 'directive' ? 8 : 5;
-      const bAlpha = p.type === 'directive' ? 0.7 : 0.5;
-      const bRad = p.type === 'directive' ? 3.5 : 2.5;
-      for (let s = 0; s < tLen; s++) {
-        const tt = Math.max(0, p.t - s * 0.012);
-        const tp = quadBez(a.x, a.y, p.cx, p.cy, b.x, b.y, tt);
-        ctx.beginPath(); ctx.arc(tp.x, tp.y, Math.max(0.5, bRad - s * 0.3), 0, Math.PI * 2);
-        ctx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${(1 - s / tLen) * bAlpha})`; ctx.fill();
-      }
-      const glow = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, p.type === 'directive' ? 14 : 10);
-      glow.addColorStop(0, `hsla(${p.hue}, 90%, 80%, 0.5)`);
-      glow.addColorStop(1, `hsla(${p.hue}, 90%, 80%, 0)`);
-      ctx.beginPath(); ctx.arc(pos.x, pos.y, p.type === 'directive' ? 14 : 10, 0, Math.PI * 2);
-      ctx.fillStyle = glow; ctx.fill();
+      const a = nodes[p.from], b = nodes[p.to]; const pos = quadBez(a.x, a.y, p.cx, p.cy, b.x, b.y, p.t);
+      const tLen = p.type === 'directive' ? 8 : 5; const bAlpha = p.type === 'directive' ? 0.7 : 0.5; const bRad = p.type === 'directive' ? 3.5 : 2.5;
+      for (let s = 0; s < tLen; s++) { const tt = Math.max(0, p.t - s * 0.012); const tp = quadBez(a.x, a.y, p.cx, p.cy, b.x, b.y, tt); ctx.beginPath(); ctx.arc(tp.x, tp.y, Math.max(0.5, bRad - s * 0.3), 0, Math.PI * 2); ctx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${(1 - s / tLen) * bAlpha})`; ctx.fill(); }
+      const gs = p.type === 'directive' ? 14 : 10; const glow = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, gs); glow.addColorStop(0, `hsla(${p.hue}, 90%, 80%, 0.5)`); glow.addColorStop(1, `hsla(${p.hue}, 90%, 80%, 0)`); ctx.beginPath(); ctx.arc(pos.x, pos.y, gs, 0, Math.PI * 2); ctx.fillStyle = glow; ctx.fill();
     }
 
     requestAnimationFrame(draw);
   }
 
   requestAnimationFrame(draw);
-
   let resizeTimer: ReturnType<typeof setTimeout>;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 200); });
   resize();
