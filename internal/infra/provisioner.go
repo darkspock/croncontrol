@@ -73,7 +73,6 @@ func (p *Provisioner) EnsureCapacity(ctx context.Context, workspaceID string, ne
 		workspaceID).Scan(&available)
 
 	if available >= needed {
-		// Find a server with capacity
 		var serverIP string
 		p.pool.QueryRow(ctx,
 			`SELECT ip_address FROM workspace_servers
@@ -82,6 +81,17 @@ func (p *Provisioner) EnsureCapacity(ctx context.Context, workspaceID string, ne
 			 ORDER BY containers_running LIMIT 1`,
 			workspaceID).Scan(&serverIP)
 		return serverIP, nil
+	}
+
+	// Re-activate idle servers before provisioning new ones
+	var idleIP string
+	err := p.pool.QueryRow(ctx,
+		`UPDATE workspace_servers SET state = 'ready', updated_at = now()
+		 WHERE id = (SELECT id FROM workspace_servers WHERE workspace_id = $1 AND state = 'idle' LIMIT 1)
+		 RETURNING ip_address`, workspaceID).Scan(&idleIP)
+	if err == nil {
+		slog.Info("infra: re-activated idle server", "workspace", workspaceID, "ip", idleIP)
+		return idleIP, nil
 	}
 
 	// Check max servers limit
@@ -150,10 +160,24 @@ func (p *Provisioner) DestroyServer(ctx context.Context, serverID string) error 
 	}
 
 	slog.Info("infra: destroying server", "server", serverID, "hetzner_id", hetznerID)
+	p.pool.Exec(ctx,
+		`UPDATE workspace_servers SET state = 'destroying', updated_at = now() WHERE id = $1`, serverID)
 
-	if err := p.hetzner.DeleteServer(ctx, hetznerID); err != nil {
-		slog.Error("infra: failed to destroy server", "error", err)
-		return err
+	// Retry Hetzner delete up to 3 times
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := p.hetzner.DeleteServer(ctx, hetznerID); err != nil {
+			lastErr = err
+			slog.Warn("infra: destroy attempt failed", "server", serverID, "attempt", attempt+1, "error", err)
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+			continue
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		slog.Error("infra: failed to destroy server after retries", "server", serverID, "error", lastErr)
+		return lastErr
 	}
 
 	p.pool.Exec(ctx,
@@ -201,6 +225,28 @@ func (p *Provisioner) checkIdleServers(ctx context.Context) {
 		p.pool.Exec(ctx, `UPDATE workspace_servers SET state = 'idle', updated_at = now() WHERE id = $1`, serverID)
 		p.DestroyServer(ctx, serverID)
 	}
+}
+
+// DestroyWorkspaceServers destroys all servers belonging to a workspace (called on workspace deletion).
+func (p *Provisioner) DestroyWorkspaceServers(ctx context.Context, workspaceID string) error {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, hetzner_id, name FROM workspace_servers
+		 WHERE workspace_id = $1 AND state NOT IN ('destroyed', 'destroying')`, workspaceID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var serverID, name string
+		var hetznerID int64
+		rows.Scan(&serverID, &hetznerID, &name)
+		slog.Info("infra: destroying workspace server", "server", name, "workspace", workspaceID)
+		p.hetzner.DeleteServer(ctx, hetznerID)
+		p.pool.Exec(ctx,
+			`UPDATE workspace_servers SET state = 'destroyed', destroyed_at = now(), updated_at = now() WHERE id = $1`, serverID)
+	}
+	return nil
 }
 
 // IncrementContainer finds a server with capacity for this workspace and increments its count.

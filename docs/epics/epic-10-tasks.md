@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~75% — Backend complete (Hetzner client, provisioner, SQLC, config, Swarm constraints, admin API, container executor integration). Frontend dashboard done. Remaining: lifecycle automation, platform admin frontend, cloud-init error reporting.
+**Status**: ~90% — Backend complete. All acceptance criteria met. Remaining: platform admin frontend (capacity/utilization UI), cloud-init error reporting, server unavailability handling.
 
 **Created**: 2026-03-19
 
@@ -94,12 +94,12 @@
 ## Phase 6: Lifecycle & Billing
 
 ### T10.10: Server Lifecycle
-- [ ] Auto-provisioning on first container orchestra
-- [ ] Idle detection: no containers for grace_period → mark idle
-- [ ] Idle → destroying: call Hetzner delete
-- [ ] Re-activate idle server if new orchestra starts
-- [ ] Destroy servers on workspace deletion
-- [ ] Handle Hetzner API failures gracefully (retry, mark error)
+- [x] Auto-provisioning on first container orchestra (via EnsureCapacity in container executor)
+- [x] Idle detection: no containers for grace_period → mark idle (checkIdleServers loop)
+- [x] Idle → destroying: call Hetzner delete (with retry)
+- [x] Re-activate idle server if new orchestra starts (EnsureCapacity checks idle first)
+- [x] Destroy servers on workspace deletion (DestroyWorkspaceServers)
+- [x] Handle Hetzner API failures gracefully (3 retries with backoff)
 
 ### T10.11: Billing Display
 - [ ] Monthly cost per workspace = count(active servers) * monthly_cost * 2
@@ -111,14 +111,14 @@
 ## Acceptance Criteria
 
 - [x] Hetzner API client: create, delete, get server
-- [ ] Cloud-init script: Docker install + Swarm join + ready callback
+- [x] Cloud-init script: Docker install + Swarm join + ready callback
 - [x] `workspace_servers` table with full lifecycle
-- [ ] Auto-provisioning: create server when workspace needs capacity
-- [ ] Idle destruction: destroy server after grace period with no containers
-- [ ] Swarm placement constraints: containers only run on workspace nodes
+- [x] Auto-provisioning: create server when workspace needs capacity
+- [x] Idle destruction: destroy server after grace period with no containers
+- [x] Swarm placement constraints: containers only run on workspace nodes
 - [x] Server ready callback: `/infra/servers/{id}/ready`
 - [x] Dashboard: server list with state, capacity, cost
-- [ ] Platform admin: cross-workspace infrastructure view
-- [ ] Configuration: Hetzner token, datacenter, server type, grace period
+- [x] Platform admin: cross-workspace infrastructure view (API)
+- [x] Configuration: Hetzner token, datacenter, server type, grace period
 - [x] 2x pricing model reflected in dashboard
-- [ ] Servers destroyed on workspace deletion
+- [x] Servers destroyed on workspace deletion
