@@ -1,54 +1,56 @@
 # CronControl
 
-Open-source control plane for scheduled and event-driven operational workloads. Manage cron jobs, durable queues, and infrastructure execution with full traceability, heartbeats, and replay.
+Open-source control plane for scheduled and event-driven operational workloads. Single Go binary + PostgreSQL. MIT licensed.
+
+**Cron scheduling, durable queues, 5 execution methods, worker runtime, AI-powered orchestration, 19-page dashboard.**
+
+[Website](https://croncontrol.dev) | [Live Demo](https://app.croncontrol.dev) | [Orchestras](https://croncontrol.dev/orchestras/) | [Compare](https://croncontrol.dev/compare/)
 
 ## Features
 
-- **Scheduling**: Cron, fixed-delay, and on-demand execution with missed-run recovery
-- **Durable Queue**: Database-backed job queue with retry, replay, and full attempt history
-- **Execution Methods**: HTTP, SSH, AWS SSM, Kubernetes Jobs
-- **Worker Runtime**: Deploy workers in your infrastructure for private network execution
-- **Heartbeat & Progress**: Real-time progress tracking (total/current/%) for long-running processes
-- **Dependencies**: Trigger processes after upstream completion (after / after_success)
-- **13-State Run Machine**: pending → running → completed/failed/hung/killed with retry support
-- **Multi-Workspace**: Isolated workspaces with role-based access (admin/operator/viewer)
-- **Webhook Events**: HMAC-SHA256 signed event delivery with auto-disable
-- **Prometheus Metrics**: `/metrics` endpoint with request latency, run duration, and state gauges
-- **Agentic-First**: MCP server for AI agents, CLI tool (`cronctl`), PHP heartbeat SDK
-- **Dashboard**: 15-page React UI with dark/light mode, timeline visualization, and real-time polling
-- **Single Binary**: Frontend embedded in Go binary via `go:embed`
+- **Scheduling**: Cron, fixed-delay, and on-demand with timezone/DST handling and missed-run recovery
+- **Durable Queue**: Database-backed job queue with retry, exponential backoff, replay, batch enqueue, and idempotency keys
+- **5 Execution Methods**: HTTP, SSH, AWS SSM, Kubernetes Jobs, Docker containers (via Swarm)
+- **Worker Runtime**: Deploy workers inside private networks for air-gapped execution
+- **Orchestras** (Coming Soon): Multi-step workflows with AI Director (Claude/GPT/Gemini), human-in-the-loop choices, real-time chat, and budget controls
+- **Auto-Provisioned Infrastructure**: Hetzner servers created on demand for container execution, destroyed when idle
+- **13-State Run Machine**: Validated transitions from pending to completed, with retrying, hung detection, kill, pause, and resume
+- **Heartbeat & Progress**: Real-time progress tracking for long-running tasks
+- **Workspace Secrets**: AES-256-GCM encrypted vault, injected as env vars into AgentNodes
+- **Artifacts**: Upload/download files per run (S3/MinIO or local filesystem)
+- **Webhook Events**: HMAC-SHA256 signed delivery for run.*, job.*, worker.* events
+- **Prometheus Metrics**: `/metrics` endpoint with request latency, run duration, state gauges, 3 logging backends
+- **MCP Server**: 15+ tools for AI agents (Claude, GPT, or any MCP client)
+- **CLI**: `cronctl` with bash/zsh completion
+- **5 SDKs**: PHP, Python, Node.js, Go, Laravel — all zero-dependency
+- **Google OAuth + RBAC**: Admin, operator, viewer roles per workspace
+- **Platform Admin**: Super admin cross-workspace management
+- **19-Page Dashboard**: React 19 + shadcn/ui with dark theme
+- **Single Binary**: Frontend embedded via `go:embed`. Deploy anywhere.
 
 ## Quick Start
 
 ```bash
-# Prerequisites: Go 1.24+, Docker
+# Prerequisites: Go 1.26+, Docker
 
-# Clone
 git clone https://github.com/darkspock/croncontrol.git
 cd croncontrol
 
-# Start PostgreSQL and apply schema
+# Start PostgreSQL
 docker compose up -d
-docker compose exec -T postgres psql -U croncontrol -d croncontrol < schema.sql
 
-# Run the server
-go run .
+# Apply migrations and run
+make migrate start
 
 # Open the dashboard
-open http://localhost:8080
-
-# Or use the API directly
-curl -X POST http://localhost:8080/api/v1/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","name":"My Workspace","password":"mysecurepass12"}'
+open http://localhost:8090
 ```
 
 ### Seed Demo Data
 
 ```bash
-# Start the server, then in another terminal:
 ./scripts/seed.sh
-# Creates 5 processes, runs, a queue, and sample jobs
+# Creates processes, runs, queues, jobs
 # Login: demo@croncontrol.dev / demodemo1234
 ```
 
@@ -56,83 +58,101 @@ curl -X POST http://localhost:8080/api/v1/register \
 
 ```bash
 docker build -t croncontrol .
-docker run -p 8080:8080 -e CC_DATABASE_HOST=host.docker.internal croncontrol
+docker run -p 8090:8090 -e CC_DATABASE_HOST=host.docker.internal croncontrol
 ```
 
 ## Dashboard
 
-15 pages with dark/light mode:
+19 pages:
 
-| Page | Features |
+| Page | Description |
 |---|---|
 | Dashboard | Summary cards, recent runs, process status |
 | Processes | List, create, delete, pause/resume, trigger |
-| Process Detail | Stats, runs history, full configuration, dependency info |
-| Runs | Filterable list by state/origin |
-| Run Detail | Progress bar, heartbeat timeline, output viewer, kill/replay |
+| Process Detail | Stats, run history, configuration, dependencies |
+| Runs | Filterable by state, origin, process |
+| Run Detail | Progress bar, heartbeat timeline, output, kill/replay, error display |
+| Upcoming Runs | Scheduled runs in the next 24h |
+| Failed Jobs | Failed jobs across all queues |
 | Timeline | Visual execution bars per process over time |
-| Queues | Cards with stats, enqueue job modal |
-| Queue Create | Method, concurrency, retry config |
-| Jobs | Filterable list, state badges |
-| Job Detail | Collapsible attempt history with request/response |
-| Settings | API keys (create/revoke), workers, members |
+| Queues | Queue cards with stats |
+| Queue Detail | Jobs, attempts, enqueue modal |
+| Orchestras | Coming soon page |
+| Settings: API Keys | Create, revoke, copy |
+| Settings: Workers | Create with enrollment token, status monitoring |
+| Settings: Secrets | Create, update, reveal/hide, delete (AES-256-GCM) |
+| Settings: Members | Invite, role management |
+| Settings: Webhooks | Create, test delivery, event filtering |
+| Settings: Credentials | SSH keys, SSM profiles, K8s clusters |
+| Settings: Infrastructure | Server list, provision, destroy, cost |
+| Platform Admin | Cross-workspace stats, user management, infrastructure |
 
 ## Architecture
 
 ```
-Control Plane (Go)
-├── Planner        — Materializes future runs from cron schedules
-├── Executor       — Claims and dispatches runs (SELECT FOR UPDATE SKIP LOCKED)
-├── Queue Proc.    — Processes durable queue jobs with retry/backoff
-├── Monitor        — Detects execution/heartbeat timeouts
-├── Notifier       — Delivers HMAC-signed webhook events
-├── Cleanup        — Retention-based data lifecycle
-├── Metrics        — Prometheus /metrics endpoint
-└── Worker Disp.   — Routes tasks to customer-deployed workers
+Control Plane (single Go binary)
+├── Planner           — Materializes future runs from cron schedules
+├── Executor          — Claims and dispatches runs (SELECT FOR UPDATE SKIP LOCKED)
+├── Queue Processor   — Durable queue jobs with retry/backoff
+├── Monitor           — Detects execution/heartbeat timeouts
+├── Orchestra Monitor — Timeout and budget enforcement for orchestras
+├── Notifier          — HMAC-signed webhook event delivery
+├── Cleanup           — Retention-based data lifecycle
+├── Metrics Collector — Prometheus gauges, counters, histograms
+├── Worker Dispatcher — Routes tasks to private-network workers
+├── Infra Provisioner — Auto-provisions/destroys Hetzner servers
+└── AI Director       — Multi-model LLM orchestration (Claude/GPT/Gemini)
 
-Execution Methods: HTTP | SSH | SSM | K8s
-Runtimes: Direct | Worker (private networks)
-Database: PostgreSQL 16 (18 tables, prefix+ULID IDs)
-Frontend: React 19 + Vite + shadcn/ui + Tailwind
+Execution: HTTP | SSH | SSM | K8s | Container (Docker Swarm)
+Runtimes:  Direct | Worker (private networks) | Auto-provisioned
+Database:  PostgreSQL 16 (25+ tables, prefix+ULID IDs)
+Frontend:  React 19 + Vite + shadcn/ui + Tailwind CSS 4
+Website:   Astro (croncontrol.dev)
 ```
 
 ## API
 
-31 endpoints. Authentication via `X-API-Key` header. Full spec at `/api/v1/openapi.yaml`.
+60+ endpoints. Authentication via `X-API-Key` header or Google OAuth. Full spec at `/api/v1/openapi.yaml`.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | /api/v1/register | Create workspace + get API key |
-| POST | /api/v1/login | Email + password login |
-| GET | /api/v1/processes | List processes |
-| POST | /api/v1/processes | Create a process |
-| GET | /api/v1/processes/:id | Get process details |
-| POST | /api/v1/processes/:id/trigger | Trigger a manual run |
-| POST | /api/v1/processes/:id/pause | Pause scheduling |
-| GET | /api/v1/runs | List runs (filter by state/origin/process) |
-| GET | /api/v1/runs/:id | Get run with attempts |
-| POST | /api/v1/runs/:id/kill | Kill running execution |
-| GET | /api/v1/runs/:id/output | Get stdout/stderr |
-| POST | /api/v1/heartbeat | Report progress (no auth) |
-| GET | /api/v1/queues | List queues |
-| POST | /api/v1/queues | Create a queue |
-| POST | /api/v1/jobs | Enqueue a job |
-| GET | /api/v1/jobs/:id | Get job + attempt history |
-| POST | /api/v1/jobs/:id/replay | Replay a failed job |
-| GET | /api/v1/api-keys | List API keys |
-| POST | /api/v1/api-keys | Create API key |
-| GET | /api/v1/workers | List workers |
-| POST | /api/v1/workers | Create worker + enrollment token |
-| GET | /health | Health check |
-| GET | /metrics | Prometheus metrics |
+Key endpoints:
 
-## Agentic
+| Category | Endpoints |
+|---|---|
+| Auth | register, login, Google OAuth, forgot/reset password, verify email |
+| Processes | CRUD, trigger, pause/resume, delete |
+| Runs | list, detail, kill, cancel, replay, output, result, artifacts |
+| Queues & Jobs | create queue, enqueue job, cancel, replay, batch |
+| Workers | create (enrollment token), enroll, heartbeat, delete |
+| Orchestras | create, score, finish, cancel, next movement, choose, chat (SSE) |
+| Secrets | CRUD (AES-256-GCM encrypted) |
+| Webhooks | CRUD, test delivery |
+| Infrastructure | list servers, provision, destroy, pool overview, ready callback |
+| Admin | platform stats, workspace management, user management, infra overview |
 
-### MCP Server
-```bash
-CRONCONTROL_URL=http://localhost:8080 CRONCONTROL_API_KEY=cc_live_... croncontrol-mcp
+## SDKs
+
+### Node.js
+```javascript
+const { CronControl } = require('./croncontrol');
+const cc = new CronControl('http://localhost:8090', 'cc_live_...');
+await cc.triggerProcess('prc_01HYX...');
+await cc.createOrchestra({ name: 'cleanup', director_type: 'ai' });
 ```
-12 tools: list_processes, create_process, trigger_process, list_runs, get_run, kill_run, enqueue_job, get_job, replay_job, get_health, and more.
+
+### Python
+```python
+from croncontrol import CronControl
+cc = CronControl('http://localhost:8090', 'cc_live_...')
+cc.trigger_process('prc_01HYX...')
+cc.create_orchestra(name='cleanup', director_type='ai')
+```
+
+### Go
+```go
+cc := croncontrol.New("http://localhost:8090", "cc_live_...")
+cc.TriggerProcess(ctx, "prc_01HYX...")
+cc.CreateOrchestra(ctx, croncontrol.CreateOrchestraParams{Name: "cleanup"})
+```
 
 ### CLI
 ```bash
@@ -140,41 +160,44 @@ cronctl login --key cc_live_...
 cronctl processes list
 cronctl processes trigger prc_01HYX...
 cronctl runs list --state failed
-cronctl jobs enqueue --queue que_01HYX... --payload '{"to":"user@example.com"}'
+cronctl jobs enqueue --queue que_01HYX... --payload '{"key":"value"}'
 ```
 
-### PHP SDK
-```php
-$cc = new CronControl();
-$cc->heartbeat(1000, 0, "Starting...");
-// ... work ...
-$cc->heartbeat(1000, 500, "Halfway");
-$cc->heartbeat(1000, 1000, "Done");
+### MCP Server
+```bash
+CRONCONTROL_URL=http://localhost:8090 CRONCONTROL_API_KEY=cc_live_... croncontrol-mcp
 ```
+15+ tools for AI agents: list processes, trigger runs, enqueue jobs, manage orchestras, read scores, post to chat.
 
 ## Development
 
 ```bash
-just setup          # Start PostgreSQL + apply schema
-just dev            # Run with hot reload (air)
-just build          # Build single binary (frontend + backend)
-just test           # Run all 44 tests
-just seed           # Seed demo data
-just docker-build   # Build Docker image
-just generate       # Regenerate API + DB code
-just lint           # Run linters
+make setup      # Start PostgreSQL + apply migrations
+make start      # Build frontend + run server
+make test       # Run tests
+make seed       # Seed demo data
+make build      # Build all binaries (GoReleaser)
+make deploy     # Deploy to production
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Go 1.24, chi, SQLC, pgx/v5 |
-| Database | PostgreSQL 16, Atlas migrations |
-| Frontend | React 19, Vite, shadcn/ui, Tailwind CSS 4, TanStack |
-| Observability | Prometheus, structured JSON logging (slog) |
-| Auth | bcrypt, SHA-256 API keys, RBAC |
-| Tooling | Justfile, mise, pre-commit, GoReleaser |
+| Backend | Go 1.26, chi router, SQLC, pgx/v5 |
+| Database | PostgreSQL 16, incremental migrations |
+| Frontend | React 19, Vite, shadcn/ui, Tailwind CSS 4, TanStack Query |
+| Website | Astro, Tailwind CSS 4 |
+| Auth | bcrypt, SHA-256 API keys, Google OAuth, RBAC |
+| Encryption | AES-256-GCM (secrets), HMAC-SHA256 (webhooks) |
+| Observability | Prometheus, 3 logging backends (database/file/OpenSearch) |
+| Infrastructure | Hetzner Cloud API, Docker Swarm, cloud-init |
+| AI | Anthropic, OpenAI, Google (direct API tool_use) |
+| Tooling | Makefile, GoReleaser, GitHub Actions |
+
+## Built with AI
+
+CronControl was built in 2 days using [Claude Code](https://claude.com/claude-code) (Opus). 10 epics, 400+ tasks, 25,000+ lines of code. [Read the story](https://croncontrol.dev/built-with-ai/).
 
 ## License
 
