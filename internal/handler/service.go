@@ -1776,6 +1776,207 @@ func (s *Service) DeleteK8sCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// Orchestras
+// ============================================================================
+
+func (s *Service) CreateOrchestra(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	var req struct {
+		Name           string   `json:"name"`
+		DirectorType   string   `json:"director_type"`
+		DirectorProcID *string  `json:"director_process_id"`
+		AIConfig       any      `json:"ai_config"`
+		FirstMusician  string   `json:"first_musician"`
+		Secrets        []string `json:"secrets"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "name is required", "")
+		return
+	}
+	if req.DirectorType == "" {
+		req.DirectorType = "none"
+	}
+	var aiJSON []byte
+	if req.AIConfig != nil {
+		aiJSON, _ = json.Marshal(req.AIConfig)
+	}
+	orch, err := s.queries.CreateOrchestra(r.Context(), db.CreateOrchestraParams{
+		ID: id.New("orc_"), WorkspaceID: wsID, Name: req.Name,
+		DirectorType: req.DirectorType, DirectorProcessID: req.DirectorProcID,
+		AIConfig: aiJSON, Secrets: req.Secrets,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create orchestra", err.Error())
+		return
+	}
+	if req.FirstMusician != "" {
+		actor, _ := auth.GetActor(r.Context())
+		step := int32(1)
+		s.queries.IncrementMovementCount(r.Context(), orch.ID)
+		newRun, _ := s.queries.CreateRun(r.Context(), db.CreateRunParams{
+			ID: id.NewRun(), WorkspaceID: wsID, ProcessID: req.FirstMusician,
+			ScheduledAt: dbutil.Timestamptz(time.Now().UTC()), State: string(runstate.Pending),
+			Origin: "orchestra", MaxAttempts: 1, ActorType: &actor.Type, ActorID: &actor.ID,
+		})
+		s.pool.Exec(r.Context(), "UPDATE runs SET orchestra_id=$1, orchestra_step=$2 WHERE id=$3", orch.ID, step, newRun.ID)
+	}
+	writeJSON(w, 201, map[string]any{"data": orch})
+}
+
+func (s *Service) ListOrchestras(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	orchs, err := s.queries.ListOrchestrasByWorkspace(r.Context(), db.ListOrchestrasParams{WorkspaceID: wsID, Limit: 50, Offset: 0})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list orchestras", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": orchs, "meta": map[string]any{"total": len(orchs)}})
+}
+
+func (s *Service) GetOrchestraHandler(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	orchID := chi.URLParam(r, "id")
+	orch, err := s.queries.GetOrchestra(r.Context(), db.GetOrchestraParams{ID: orchID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Orchestra not found", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": orch})
+}
+
+func (s *Service) GetOrchestraScore(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	orchID := chi.URLParam(r, "id")
+	orch, err := s.queries.GetOrchestra(r.Context(), db.GetOrchestraParams{ID: orchID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Orchestra not found", "")
+		return
+	}
+	movements, _ := s.queries.ListMovementsByOrchestra(r.Context(), orchID)
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"orchestra": orch, "movements": movements}})
+}
+
+func (s *Service) CancelOrchestra(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	s.queries.UpdateOrchestraState(r.Context(), orchID, "cancelled")
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "cancelled"}})
+}
+
+func (s *Service) FinishOrchestraHandler(w http.ResponseWriter, r *http.Request) {
+	orchID := chi.URLParam(r, "id")
+	var req struct{ Summary string `json:"summary"` }
+	json.NewDecoder(r.Body).Decode(&req)
+	s.queries.FinishOrchestra(r.Context(), orchID, &req.Summary)
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "completed"}})
+}
+
+func (s *Service) NextMovement(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	runID := chi.URLParam(r, "id")
+	var req struct {
+		ProcessID string `json:"process_id"`
+		Payload   any    `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ProcessID == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "process_id is required", "")
+		return
+	}
+	run, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
+	orchestraID := ""
+	step := int32(1)
+	if run.OrchestraID != nil {
+		orchestraID = *run.OrchestraID
+		if run.OrchestraStep != nil {
+			step = *run.OrchestraStep + 1
+		}
+		s.queries.IncrementMovementCount(r.Context(), orchestraID)
+	}
+	actor, _ := auth.GetActor(r.Context())
+	newRun, err := s.queries.CreateRun(r.Context(), db.CreateRunParams{
+		ID: id.NewRun(), WorkspaceID: wsID, ProcessID: req.ProcessID,
+		ScheduledAt: dbutil.Timestamptz(time.Now().UTC()), State: string(runstate.Pending),
+		Origin: "orchestra", MaxAttempts: 1, ActorType: &actor.Type, ActorID: &actor.ID,
+		TriggeredByRunID: &runID,
+	})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to create movement", err.Error())
+		return
+	}
+	if orchestraID != "" {
+		s.pool.Exec(r.Context(), "UPDATE runs SET orchestra_id=$1, orchestra_step=$2 WHERE id=$3", orchestraID, step, newRun.ID)
+	}
+	writeJSON(w, 201, map[string]any{"data": newRun})
+}
+
+func (s *Service) SetChoiceConfig(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	wsID := auth.WorkspaceID(r.Context())
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1024*1024))
+	if !json.Valid(body) {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid JSON", "")
+		return
+	}
+	s.queries.SetRunChoiceConfig(r.Context(), runID, body)
+	run, _ := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if run.OrchestraID != nil {
+		s.queries.UpdateOrchestraState(r.Context(), *run.OrchestraID, "waiting_for_choice")
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "waiting_for_choice"}})
+}
+
+func (s *Service) Choose(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	runID := chi.URLParam(r, "id")
+	var req struct{ ChoiceIndex int32 `json:"choice_index"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "choice_index is required", "")
+		return
+	}
+	run, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if err != nil || run.ChoiceConfig == nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Run has no choice config", "")
+		return
+	}
+	var config struct{ Choices []struct{ ProcessID *string `json:"process_id"` } `json:"choices"` }
+	json.Unmarshal(run.ChoiceConfig, &config)
+	if int(req.ChoiceIndex) >= len(config.Choices) {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid choice index", "")
+		return
+	}
+	s.queries.SetRunChosenIndex(r.Context(), runID, req.ChoiceIndex)
+	choice := config.Choices[req.ChoiceIndex]
+	if choice.ProcessID != nil && *choice.ProcessID != "" {
+		actor, _ := auth.GetActor(r.Context())
+		step := int32(1)
+		orchestraID := ""
+		if run.OrchestraID != nil {
+			orchestraID = *run.OrchestraID
+			if run.OrchestraStep != nil { step = *run.OrchestraStep + 1 }
+			s.queries.IncrementMovementCount(r.Context(), orchestraID)
+			s.queries.UpdateOrchestraState(r.Context(), orchestraID, "active")
+		}
+		newRun, _ := s.queries.CreateRun(r.Context(), db.CreateRunParams{
+			ID: id.NewRun(), WorkspaceID: wsID, ProcessID: *choice.ProcessID,
+			ScheduledAt: dbutil.Timestamptz(time.Now().UTC()), State: string(runstate.Pending),
+			Origin: "orchestra", MaxAttempts: 1, ActorType: &actor.Type, ActorID: &actor.ID,
+			TriggeredByRunID: &runID,
+		})
+		if orchestraID != "" {
+			s.pool.Exec(r.Context(), "UPDATE runs SET orchestra_id=$1, orchestra_step=$2 WHERE id=$3", orchestraID, step, newRun.ID)
+		}
+		writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "next_triggered", "run_id": newRun.ID}})
+		return
+	}
+	if run.OrchestraID != nil {
+		s.queries.UpdateOrchestraState(r.Context(), *run.OrchestraID, "completed")
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "completed"}})
+}
+
 // ============================================================================
 // Run Result
 // ============================================================================

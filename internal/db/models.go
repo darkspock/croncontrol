@@ -194,6 +194,11 @@ type Run struct {
 	Runtime           *string            `json:"runtime"`
 	WorkerID          *string            `json:"worker_id"`
 	Tags              []string           `json:"tags"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	Result            []byte             `json:"result,omitempty"`
+	ChoiceConfig      []byte             `json:"choice_config,omitempty"`
+	ChosenIndex       *int32             `json:"chosen_index"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }

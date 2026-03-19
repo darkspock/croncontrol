@@ -114,24 +114,11 @@
 - [ ] Fail orchestra at 100%
 - [ ] Webhook events: `orchestra.budget_warning`, `orchestra.budget_exceeded`
 
-## Phase 5: Sub-Orchestras
+## ~~Phase 5: Sub-Orchestras~~ DEFERRED
+> Moved to future epic. Orchestras are flat for now — no nesting.
 
-### T09.14 Launch Sub-Orchestra
-- [ ] `POST /orchestras` with `parent_orchestra_id` and `wait_for_parent`
-- [ ] SDK: `launch_sub_orchestra(parent_id, name, director, first_musician, wait)`
-- [ ] Sub-orchestra inherits parent secrets (can add more)
-- [ ] Sub-orchestra has its own chat (isolated)
-- [ ] Sub-orchestra has its own S3 prefix (isolated)
-- [ ] Budget shared: sub-orchestra costs count against parent
+## Phase 5: Container Execution (Docker Swarm)
 
-### T09.15 Sub-Orchestra Completion
-- [ ] When sub-orchestra completes: event sent to parent director
-- [ ] If wait=True: parent director receives `sub_orchestra_completed` event with summary
-- [ ] If wait=False: event posted to parent chat only
-- [ ] If parent cancelled/failed: cascade cancel to active sub-orchestras
-- [ ] Max depth: configurable (default 5)
-
-## Phase 6: Container Execution (Docker Swarm)
 
 ### T09.16 Container Executor
 - [ ] `internal/executor/container/container.go`: implements Method interface

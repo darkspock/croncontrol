@@ -23,12 +23,13 @@ const (
 	Skipped          State = "skipped"
 	Cancelled        State = "cancelled"
 	Paused           State = "paused"
+	WaitingForChoice State = "waiting_for_choice"
 )
 
 // AllStates lists all valid states.
 var AllStates = []State{
 	Pending, WaitingForWorker, Queued, Running, Retrying, KillRequested,
-	Completed, Failed, Hung, Killed, Skipped, Cancelled, Paused,
+	Completed, Failed, Hung, Killed, Skipped, Cancelled, Paused, WaitingForChoice,
 }
 
 // validTransitions maps each state to its allowed next states.
@@ -36,7 +37,7 @@ var validTransitions = map[State][]State{
 	Pending:          {WaitingForWorker, Queued, Running, Skipped, Cancelled, Paused},
 	WaitingForWorker: {Running, Cancelled},
 	Queued:           {Running, Cancelled, Paused},
-	Running:          {Completed, Failed, Hung, KillRequested, Retrying},
+	Running:          {Completed, Failed, Hung, KillRequested, Retrying, WaitingForChoice},
 	Retrying:         {Running, Failed, Cancelled, Killed},
 	KillRequested:    {Killed},
 	Completed:        {},
@@ -46,6 +47,7 @@ var validTransitions = map[State][]State{
 	Skipped:          {},
 	Cancelled:        {},
 	Paused:           {Pending},
+	WaitingForChoice: {Completed, Cancelled},
 }
 
 // ValidateTransition checks whether a state transition is allowed.

@@ -368,6 +368,17 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Get("/runs/{id}/artifacts", svc.ListArtifacts)
 			r.Get("/runs/{id}/artifacts/{name}", svc.DownloadArtifact)
 
+			// Orchestras
+			r.Post("/orchestras", svc.CreateOrchestra)
+			r.Get("/orchestras", svc.ListOrchestras)
+			r.Get("/orchestras/{id}", svc.GetOrchestraHandler)
+			r.Get("/orchestras/{id}/score", svc.GetOrchestraScore)
+			r.Post("/orchestras/{id}/cancel", svc.CancelOrchestra)
+			r.Post("/orchestras/{id}/finish", svc.FinishOrchestraHandler)
+			r.Post("/runs/{id}/next", svc.NextMovement)
+			r.Post("/runs/{id}/choice", svc.SetChoiceConfig)
+			r.Post("/runs/{id}/choose", svc.Choose)
+
 			// Secrets
 			r.Get("/secrets", svc.ListSecrets)
 			r.Post("/secrets", svc.CreateSecretHandler)

@@ -257,7 +257,7 @@ INSERT INTO runs (
     $10, $11,
     $12, $13, $14
 )
-RETURNING id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at
+RETURNING id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at
 `
 
 type CreateRunParams struct {
@@ -326,6 +326,11 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.Result,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -333,7 +338,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 }
 
 const getLastRunByProcess = `-- name: GetLastRunByProcess :one
-SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at FROM runs
+SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at FROM runs
 WHERE process_id = $1
 ORDER BY scheduled_at DESC
 LIMIT 1
@@ -373,6 +378,11 @@ func (q *Queries) GetLastRunByProcess(ctx context.Context, processID string) (Ru
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.Result,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -380,7 +390,7 @@ func (q *Queries) GetLastRunByProcess(ctx context.Context, processID string) (Ru
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at FROM runs WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at FROM runs WHERE id = $1 AND workspace_id = $2
 `
 
 type GetRunParams struct {
@@ -422,6 +432,11 @@ func (q *Queries) GetRun(ctx context.Context, arg GetRunParams) (Run, error) {
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.Result,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -473,6 +488,11 @@ type GetRunWithProcessRow struct {
 	Runtime             *string            `json:"runtime"`
 	WorkerID            *string            `json:"worker_id"`
 	Tags                []string           `json:"tags"`
+	OrchestraID         *string            `json:"orchestra_id"`
+	OrchestraStep       *int32             `json:"orchestra_step"`
+	Result              []byte             `json:"result,omitempty"`
+	ChoiceConfig        []byte             `json:"choice_config,omitempty"`
+	ChosenIndex         *int32             `json:"chosen_index"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	ProcessName         string             `json:"process_name"`
@@ -519,6 +539,11 @@ func (q *Queries) GetRunWithProcess(ctx context.Context, arg GetRunWithProcessPa
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.Result,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ProcessName,
