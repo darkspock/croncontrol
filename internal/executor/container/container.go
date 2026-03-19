@@ -32,6 +32,14 @@ import (
 // Compile-time contract.
 var _ executor.Method = (*Method)(nil)
 
+// ServerPool manages workspace server capacity for container execution.
+// Implemented by infra.Provisioner; nil if auto-provisioning is disabled.
+type ServerPool interface {
+	EnsureCapacity(ctx context.Context, workspaceID string, needed int) (string, error)
+	IncrementContainer(ctx context.Context, workspaceID string) (serverID string, err error)
+	DecrementContainer(ctx context.Context, serverID string) error
+}
+
 // Config holds container executor settings.
 type Config struct {
 	SwarmEndpoint  string  // unix:///var/run/docker.sock or tcp://manager:2375
@@ -47,10 +55,11 @@ type Method struct {
 	client  *client.Client
 	config  Config
 	active  sync.Map // map[runID]string (service ID)
+	pool    ServerPool
 }
 
-// New creates a new container execution method.
-func New(cfg Config) (*Method, error) {
+// New creates a new container execution method. pool may be nil if auto-provisioning is disabled.
+func New(cfg Config, pool ServerPool) (*Method, error) {
 	opts := []client.Opt{client.FromEnv, client.WithAPIVersionNegotiation()}
 	if cfg.SwarmEndpoint != "" {
 		opts = append(opts, client.WithHost(cfg.SwarmEndpoint))
@@ -80,7 +89,7 @@ func New(cfg Config) (*Method, error) {
 		cfg.ExecTimeout = 5 * time.Minute
 	}
 
-	return &Method{client: cli, config: cfg}, nil
+	return &Method{client: cli, config: cfg, pool: pool}, nil
 }
 
 func (m *Method) Execute(ctx context.Context, params executor.ExecuteParams) (executor.Result, error) {
@@ -90,6 +99,21 @@ func (m *Method) Execute(ctx context.Context, params executor.ExecuteParams) (ex
 	image, _ := cfg["image"].(string)
 	if image == "" {
 		return executor.Result{Error: fmt.Errorf("container: image is required")}, nil
+	}
+
+	// Ensure workspace has server capacity (auto-provision if needed)
+	var allocatedServerID string
+	if m.pool != nil && params.WorkspaceID != "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+		if _, err := m.pool.EnsureCapacity(waitCtx, params.WorkspaceID, 1); err != nil {
+			return executor.Result{Error: fmt.Errorf("container: no capacity: %w", err), DurationMs: time.Since(start).Milliseconds()}, nil
+		}
+		sid, err := m.pool.IncrementContainer(ctx, params.WorkspaceID)
+		if err != nil {
+			slog.Warn("container: failed to increment container count", "error", err)
+		}
+		allocatedServerID = sid
 	}
 
 	// Parse command
@@ -188,8 +212,11 @@ func (m *Method) Execute(ctx context.Context, params executor.ExecuteParams) (ex
 	m.active.Store(params.RunID, serviceID)
 	defer func() {
 		m.active.Delete(params.RunID)
-		// Cleanup: remove service
 		m.client.ServiceRemove(context.Background(), serviceID)
+		// Decrement container count on the allocated server
+		if m.pool != nil && allocatedServerID != "" {
+			m.pool.DecrementContainer(context.Background(), allocatedServerID)
+		}
 	}()
 
 	slog.Info("container: service created", "service", serviceName, "image", image)

@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~65% — Backend mostly complete (Hetzner client, provisioner, SQLC, config, Swarm constraints, admin API). Frontend dashboard done. Remaining: container executor full integration, lifecycle automation, platform admin frontend.
+**Status**: ~75% — Backend complete (Hetzner client, provisioner, SQLC, config, Swarm constraints, admin API, container executor integration). Frontend dashboard done. Remaining: lifecycle automation, platform admin frontend, cloud-init error reporting.
 
 **Created**: 2026-03-19
 
@@ -45,10 +45,10 @@
 - [x] Server naming: `cc-{workspace_short}-{ulid}`
 
 ### T10.5: Container Executor Integration
-- [ ] Container executor checks workspace servers before dispatching
-- [ ] If no server with capacity → call EnsureCapacity, wait up to 3 min
+- [x] Container executor checks workspace servers before dispatching (via ServerPool interface)
+- [x] If no server with capacity → call EnsureCapacity, wait up to 3 min
 - [x] Swarm placement constraint: `node.labels.workspace == <ID>`
-- [ ] Increment/decrement container count on server record
+- [x] Increment/decrement container count on server record (atomic SQL UPDATE...RETURNING)
 - [ ] Handle server becoming unavailable mid-execution
 
 ---

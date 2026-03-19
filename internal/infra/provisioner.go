@@ -203,6 +203,38 @@ func (p *Provisioner) checkIdleServers(ctx context.Context) {
 	}
 }
 
+// IncrementContainer finds a server with capacity for this workspace and increments its count.
+// Returns the server ID so it can be decremented later.
+func (p *Provisioner) IncrementContainer(ctx context.Context, workspaceID string) (string, error) {
+	var serverID string
+	err := p.pool.QueryRow(ctx,
+		`UPDATE workspace_servers SET
+			containers_running = containers_running + 1,
+			state = 'active',
+			last_activity_at = now(),
+			updated_at = now()
+		WHERE id = (
+			SELECT id FROM workspace_servers
+			WHERE workspace_id = $1 AND state IN ('ready', 'active') AND containers_running < max_containers
+			ORDER BY containers_running ASC LIMIT 1
+		) RETURNING id`, workspaceID).Scan(&serverID)
+	if err != nil {
+		return "", fmt.Errorf("no server with capacity: %w", err)
+	}
+	return serverID, nil
+}
+
+// DecrementContainer decreases the container count on a server.
+func (p *Provisioner) DecrementContainer(ctx context.Context, serverID string) error {
+	_, err := p.pool.Exec(ctx,
+		`UPDATE workspace_servers SET
+			containers_running = GREATEST(containers_running - 1, 0),
+			last_activity_at = now(),
+			updated_at = now()
+		WHERE id = $1`, serverID)
+	return err
+}
+
 // ListServers returns all servers for a workspace.
 func (p *Provisioner) ListServers(ctx context.Context, workspaceID string) ([]map[string]any, error) {
 	rows, err := p.pool.Query(ctx,
