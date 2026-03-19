@@ -5,7 +5,7 @@ const features = [
   {
     icon: '🎼',
     title: 'Director Pattern',
-    desc: 'A Director (code or AI) coordinates Musicians (tasks). Each musician does its work and returns a result. The director decides what happens next.',
+    desc: 'A Director (code or AI) coordinates "Musicians" (tasks). Each "Musician" does its work and returns a result. The Director decides what happens next.',
   },
   {
     icon: '🤖',
@@ -15,27 +15,27 @@ const features = [
   {
     icon: '💬',
     title: 'Real-Time Chat',
-    desc: 'Every orchestra has a live chat channel. Director, musicians, and humans can post messages, share files, request help, and trigger actions.',
+    desc: 'Every orchestra has a live chat channel. Director, "Musicians", and humans can post messages, share files, request help, and trigger actions.',
   },
   {
     icon: '🙋',
     title: 'Human-in-the-Loop',
-    desc: 'Musicians can present N choices to a human. Each choice links to a different next step. Not just approve/reject — real multi-path decisions.',
+    desc: '"Musicians" can present N choices to a human. Each choice links to a different next step. Not just approve/reject — real multi-path decisions.',
   },
   {
     icon: '📦',
     title: 'Container Execution',
-    desc: 'Run musicians as ephemeral Docker containers on auto-provisioned Hetzner servers. 0.5 CPU per musician, Swarm handles scheduling.',
+    desc: 'Run "Musicians" as ephemeral Docker containers on auto-provisioned Hetzner servers. 0.5 CPU per "Musician", Swarm handles scheduling.',
   },
   {
     icon: '🔐',
     title: 'Workspace Secrets',
-    desc: 'Encrypted vault for API keys, credentials, and tokens. Injected as environment variables into musicians. AES-256-GCM at rest.',
+    desc: 'Encrypted vault for API keys, credentials, and tokens. Injected as environment variables into "Musicians". AES-256-GCM at rest.',
   },
   {
     icon: '📎',
     title: 'Artifacts & Results',
-    desc: 'Musicians store structured JSON results and upload files (S3/local). The next musician reads the result — no shared database needed.',
+    desc: '"Musicians" store structured JSON results and upload files (S3/local). The next "Musician" reads the result — no shared database needed.',
   },
   {
     icon: '⏱',
@@ -45,7 +45,7 @@ const features = [
   {
     icon: '🌐',
     title: '5 Execution Methods',
-    desc: 'Musicians can run via HTTP, SSH, AWS SSM, Kubernetes Jobs, or Docker containers. Mix and match within the same orchestra.',
+    desc: '"Musicians" can run via HTTP, SSH, AWS SSM, Kubernetes Jobs, or Docker containers. Mix and match within the same orchestra.',
   },
 ]
 
@@ -126,7 +126,7 @@ const comparison = [
       {[
         { term: 'Orchestra', def: 'A group of related executions working toward a goal' },
         { term: 'Director', def: 'The decision-maker — code, AI, or human' },
-        { term: 'Musician', def: 'A task that does actual work and returns a result' },
+        { term: '"Musician"', def: 'A task that does actual work and returns a result' },
         { term: 'Score', def: 'The full execution history with results and decisions' },
       ].map(t => (
         <div class="p-4 rounded-xl border border-border-subtle bg-[#0a0a0c]">
