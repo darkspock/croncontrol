@@ -66,33 +66,38 @@ const comparison = [
 
 <Layout title="Orchestras — CronControl" description="AI-powered workflow orchestration with human-in-the-loop, real-time chat, and multi-model AI directors.">
   <section class="relative overflow-hidden">
-    <OrchestraNetwork />
     <div class="hero-glow absolute inset-0"></div>
     <div class="grid-bg absolute inset-0"></div>
 
-    <div class="relative mx-auto max-w-4xl px-6 pt-24 pb-16 text-center">
-      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/5 text-sm text-amber-400 mb-8">
-        Coming Soon
+    <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-16 grid md:grid-cols-2 gap-8 items-center">
+      <div class="max-md:text-center">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/5 text-sm text-amber-400 mb-8">
+          Coming Soon
+        </div>
+
+        <h1 class="font-display text-4xl sm:text-5xl md:text-6xl leading-[1.05] tracking-tight">
+          Workflows that<br/>
+          <span class="text-accent-light glow-text italic">think for themselves.</span>
+        </h1>
+
+        <p class="mt-6 text-lg text-muted max-w-lg leading-relaxed max-md:mx-auto">
+          Orchestras are multi-step workflows where an AI Director coordinates tasks,
+          humans make decisions in real-time, and everything runs as ephemeral containers
+          on auto-provisioned infrastructure.
+        </p>
+
+        <div class="mt-10 flex flex-col sm:flex-row max-md:items-center max-md:justify-center items-start gap-4">
+          <a href="https://github.com/darkspock/croncontrol" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
+            View on GitHub
+          </a>
+          <a href="/contact" class="px-6 py-3 text-sm text-muted hover:text-text border border-border rounded-xl transition-all">
+            Get Early Access
+          </a>
+        </div>
       </div>
 
-      <h1 class="font-display text-4xl sm:text-6xl leading-[1.05] tracking-tight">
-        Workflows that<br/>
-        <span class="text-accent-light glow-text italic">think for themselves.</span>
-      </h1>
-
-      <p class="mt-6 text-lg sm:text-xl text-muted max-w-2xl mx-auto leading-relaxed">
-        Orchestras are multi-step workflows where an AI Director coordinates tasks,
-        humans make decisions in real-time, and everything runs as ephemeral containers
-        on auto-provisioned infrastructure.
-      </p>
-
-      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-        <a href="https://github.com/darkspock/croncontrol" class="px-6 py-3 text-sm font-medium bg-accent hover:bg-accent-light text-white rounded-xl transition-all shadow-xl shadow-accent/20">
-          View on GitHub
-        </a>
-        <a href="/contact" class="px-6 py-3 text-sm text-muted hover:text-text border border-border rounded-xl transition-all">
-          Get Early Access
-        </a>
+      <div class="relative h-[380px] md:h-[480px]">
+        <OrchestraNetwork />
       </div>
     </div>
   </section>
