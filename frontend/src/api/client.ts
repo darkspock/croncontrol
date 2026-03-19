@@ -84,6 +84,12 @@ export const api = {
   listWorkspaces: () => request<{ data: any[]; meta: any }>('/workspaces'),
   switchWorkspace: (id: string) => request<{ data: any }>(`/workspaces/${id}/switch`, { method: 'POST' }),
 
+  // Secrets
+  listSecrets: () => request<{ data: any[] }>('/secrets'),
+  createSecret: (name: string, value: string) => request<{ data: any }>('/secrets', { method: 'POST', body: JSON.stringify({ name, value }) }),
+  updateSecret: (name: string, value: string) => request<{ data: any }>(`/secrets/${name}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  deleteSecret: (name: string) => request(`/secrets/${name}`, { method: 'DELETE' }),
+
   // Heartbeat
   sendHeartbeat: (data: any) => request('/heartbeat', { method: 'POST', body: JSON.stringify(data) }),
 }

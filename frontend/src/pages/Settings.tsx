@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus } from 'lucide-react'
+import { Plus, Trash2, Copy, Check, Server, Key, Users, Webhook, Shield, UserPlus, Lock, Eye, EyeOff, Pencil } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
 import { formatTimeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
-type Tab = 'api-keys' | 'workers' | 'members' | 'webhooks' | 'credentials'
+type Tab = 'api-keys' | 'workers' | 'members' | 'webhooks' | 'credentials' | 'secrets'
 
 export function Settings() {
   // Pre-select tab from URL (e.g., /settings/workers)
   const pathTab = window.location.pathname.split('/')[2] as Tab | undefined
-  const [tab, setTab] = useState<Tab>(pathTab && ['api-keys', 'workers', 'members', 'webhooks', 'credentials'].includes(pathTab) ? pathTab : 'api-keys')
+  const [tab, setTab] = useState<Tab>(pathTab && ['api-keys', 'workers', 'members', 'webhooks', 'credentials', 'secrets'].includes(pathTab) ? pathTab : 'api-keys')
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: 'api-keys', label: 'API Keys', icon: Key },
     { id: 'workers', label: 'Workers', icon: Server },
+    { id: 'secrets', label: 'Secrets', icon: Lock },
     { id: 'members', label: 'Members', icon: Users },
     { id: 'webhooks', label: 'Webhooks', icon: Webhook },
     { id: 'credentials', label: 'Credentials', icon: Shield },
@@ -49,6 +50,7 @@ export function Settings() {
 
       {tab === 'api-keys' && <APIKeysTab />}
       {tab === 'workers' && <WorkersTab />}
+      {tab === 'secrets' && <SecretsTab />}
       {tab === 'members' && <MembersTab />}
       {tab === 'webhooks' && <WebhooksTab />}
       {tab === 'credentials' && <CredentialsTab />}
@@ -265,6 +267,132 @@ function WorkersTab() {
                 </button>
               </TooltipTrigger>
               <TooltipContent>Delete worker</TooltipContent>
+            </Tooltip>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// Secrets Tab
+// ============================================================
+
+function SecretsTab() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ['secrets'], queryFn: api.listSecrets })
+  const secrets = data?.data || []
+
+  const [showCreate, setShowCreate] = useState(false)
+  const [name, setName] = useState('')
+  const [value, setValue] = useState('')
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [revealed, setRevealed] = useState<Set<string>>(new Set())
+
+  const createMutation = useMutation({
+    mutationFn: ({ name, value }: { name: string; value: string }) => api.createSecret(name, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['secrets'] })
+      setShowCreate(false)
+      setName('')
+      setValue('')
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ name, value }: { name: string; value: string }) => api.updateSecret(name, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['secrets'] })
+      setEditingName(null)
+      setEditValue('')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (name: string) => api.deleteSecret(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['secrets'] }),
+  })
+
+  const toggleReveal = (n: string) => {
+    setRevealed(prev => {
+      const next = new Set(prev)
+      next.has(n) ? next.delete(n) : next.add(n)
+      return next
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-sm font-medium">{secrets.length} secrets</span>
+          <p className="text-xs text-muted-foreground mt-0.5">Encrypted with AES-256-GCM. Injected as env vars into "Musicians".</p>
+        </div>
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm hover:bg-indigo-400 transition-colors">
+          <Plus size={14} /> New Secret
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <input value={name} onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} placeholder="SECRET_NAME" className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm font-mono" />
+          <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Secret value" type="password" className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm" />
+          <p className="text-xs text-muted-foreground">Name must be uppercase with underscores only (e.g., API_TOKEN, DB_PASSWORD).</p>
+          <div className="flex gap-2">
+            <button onClick={() => createMutation.mutate({ name, value })} disabled={!name || !value} className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm disabled:opacity-50">Create</button>
+            <button onClick={() => { setShowCreate(false); setName(''); setValue('') }} className="px-3 py-1.5 rounded-md border border-border text-sm">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-border bg-card divide-y divide-border">
+        {isLoading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+        ) : secrets.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">No secrets. Secrets are encrypted values injected into orchestra "Musicians" as environment variables.</div>
+        ) : secrets.map((s: any) => (
+          <div key={s.name} className="flex items-center gap-4 px-4 py-3">
+            <Lock size={14} className="text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-mono font-medium">{s.name}</p>
+              {editingName === s.name ? (
+                <div className="flex gap-2 mt-2">
+                  <input value={editValue} onChange={(e) => setEditValue(e.target.value)} placeholder="New value" type="password" className="flex-1 px-2 py-1 rounded border border-border bg-background text-xs" />
+                  <button onClick={() => updateMutation.mutate({ name: s.name, value: editValue })} className="px-2 py-1 rounded bg-indigo-500 text-white text-xs">Save</button>
+                  <button onClick={() => setEditingName(null)} className="px-2 py-1 rounded border border-border text-xs">Cancel</button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground font-mono">
+                  {revealed.has(s.name) ? (s.value || '••••••••') : '••••••••'}
+                </p>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">{s.updated_at ? formatTimeAgo(s.updated_at) : ''}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => toggleReveal(s.name)} className="p-1.5 rounded hover:bg-muted transition-colors">
+                  {revealed.has(s.name) ? <EyeOff size={14} className="text-muted-foreground" /> : <Eye size={14} className="text-muted-foreground" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{revealed.has(s.name) ? 'Hide' : 'Reveal'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => { setEditingName(s.name); setEditValue('') }} className="p-1.5 rounded hover:bg-muted transition-colors">
+                  <Pencil size={14} className="text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Update value</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => { if (confirm(`Delete secret "${s.name}"?`)) deleteMutation.mutate(s.name) }} className="p-1.5 rounded hover:bg-red-500/10 transition-colors">
+                  <Trash2 size={14} className="text-muted-foreground hover:text-red-400" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Delete secret</TooltipContent>
             </Tooltip>
           </div>
         ))}
