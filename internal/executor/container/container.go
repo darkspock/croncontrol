@@ -171,6 +171,14 @@ func (m *Method) Execute(ctx context.Context, params executor.ExecuteParams) (ex
 		},
 	}
 
+	if params.WorkspaceID != "" {
+		spec.TaskTemplate.Placement = &swarm.Placement{
+			Constraints: []string{
+				fmt.Sprintf("node.labels.workspace == %s", params.WorkspaceID),
+			},
+		}
+	}
+
 	svc, err := m.client.ServiceCreate(ctx, spec, types.ServiceCreateOptions{})
 	if err != nil {
 		return executor.Result{Error: fmt.Errorf("container: create service: %w", err), DurationMs: time.Since(start).Milliseconds()}, nil

@@ -1,6 +1,6 @@
 # EPIC-10 Tasks: Serverless Infrastructure
 
-**Status**: ~30% — Design complete, Hetzner client + provisioner + migration created, not yet functional end-to-end.
+**Status**: ~65% — Backend mostly complete (Hetzner client, provisioner, SQLC, config, Swarm constraints, admin API). Frontend dashboard done. Remaining: container executor full integration, lifecycle automation, platform admin frontend.
 
 **Created**: 2026-03-19
 
@@ -40,14 +40,14 @@
 - [x] EnsureCapacity(ctx, workspaceID, needed) → error
 - [x] MarkServerReady(ctx, serverID) → error
 - [x] DestroyServer(ctx, serverID) → error
-- [ ] checkIdleServers loop (every 5 min)
-- [ ] Grace period: configurable idle timeout (default 1h)
-- [ ] Server naming: `cc-{workspace_short}-{ulid}`
+- [x] checkIdleServers loop (every 5 min) — with idle state marking before destroy
+- [x] Grace period: configurable idle timeout (default 1h)
+- [x] Server naming: `cc-{workspace_short}-{ulid}`
 
 ### T10.5: Container Executor Integration
 - [ ] Container executor checks workspace servers before dispatching
 - [ ] If no server with capacity → call EnsureCapacity, wait up to 3 min
-- [ ] Swarm placement constraint: `node.labels.workspace == <ID>`
+- [x] Swarm placement constraint: `node.labels.workspace == <ID>`
 - [ ] Increment/decrement container count on server record
 - [ ] Handle server becoming unavailable mid-execution
 
@@ -70,7 +70,7 @@
 ### T10.7: Config
 - [x] Add infra section to config.yaml: enabled, provider, hetzner_api_token, datacenter, server_type, ssh_key_name, swarm_manager_ip, swarm_join_token, grace_period, max_servers_per_workspace, infra_secret
 - [x] Environment variable overrides (CC_INFRA_*) — via viper AutomaticEnv
-- [ ] Validate config on startup when infra.enabled = true
+- [x] Validate config on startup when infra.enabled = true
 
 ---
 
@@ -84,10 +84,10 @@
 - [x] Empty state when infra not enabled
 
 ### T10.9: Platform Admin > Infrastructure
-- [ ] All servers across all workspaces
-- [ ] Total cost, total capacity
-- [ ] Utilization percentage
-- [ ] Filter by workspace
+- [x] All servers across all workspaces — GET /admin/infra/servers
+- [ ] Total cost, total capacity (frontend)
+- [ ] Utilization percentage (frontend)
+- [ ] Filter by workspace (frontend)
 
 ---
 

@@ -197,6 +197,8 @@ func (p *Provisioner) checkIdleServers(ctx context.Context) {
 		var serverID, name string
 		rows.Scan(&serverID, &name)
 		slog.Info("infra: idle server detected, destroying", "server", name)
+		// Before destroying, mark as idle
+		p.pool.Exec(ctx, `UPDATE workspace_servers SET state = 'idle', updated_at = now() WHERE id = $1`, serverID)
 		p.DestroyServer(ctx, serverID)
 	}
 }

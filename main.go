@@ -456,6 +456,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 				r.Post("/workspaces/{id}/impersonate", svc.AdminImpersonate)
 				r.Get("/users", svc.AdminListUsers)
 				r.Post("/users/{id}/platform-admin", svc.AdminSetPlatformAdmin)
+				r.Get("/infra/servers", svc.ListAllInfraServers)
 			})
 		})
 	})

@@ -2785,6 +2785,41 @@ func redactID(id string) string {
 }
 
 // ============================================================================
+// Platform Admin: Infrastructure View
+// ============================================================================
+
+func (s *Service) ListAllInfraServers(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.pool.Query(r.Context(),
+		`SELECT id, workspace_id, name, ip_address, state, server_type, containers_running, max_containers, monthly_cost, created_at
+		 FROM workspace_servers WHERE state != 'destroyed' ORDER BY workspace_id, created_at`)
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to list servers", "")
+		return
+	}
+	defer rows.Close()
+
+	var servers []map[string]any
+	for rows.Next() {
+		var id, wsID, name, state, serverType string
+		var ip *string
+		var running, max int32
+		var cost float64
+		var created time.Time
+		rows.Scan(&id, &wsID, &name, &ip, &state, &serverType, &running, &max, &cost, &created)
+		servers = append(servers, map[string]any{
+			"id": id, "workspace_id": wsID, "name": name, "ip_address": ip, "state": state,
+			"server_type": serverType, "containers_running": running,
+			"max_containers": max, "monthly_cost": cost, "workspace_cost": cost * 2,
+			"created_at": created,
+		})
+	}
+	if servers == nil {
+		servers = []map[string]any{}
+	}
+	writeJSON(w, 200, map[string]any{"data": servers, "meta": map[string]any{"total": len(servers)}})
+}
+
+// ============================================================================
 // Chat Simulate (Groq proxy for website demo)
 // ============================================================================
 

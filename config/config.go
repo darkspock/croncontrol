@@ -130,6 +130,39 @@ type InfraConfig struct {
 	InfraSecret    string `mapstructure:"infra_secret"`
 }
 
+// Validate checks required fields when infra is enabled and sets defaults.
+func (c *InfraConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.HetznerToken == "" {
+		return fmt.Errorf("infra.hetzner_api_token is required when infra is enabled")
+	}
+	if c.SwarmManagerIP == "" {
+		return fmt.Errorf("infra.swarm_manager_ip is required when infra is enabled")
+	}
+	if c.SwarmJoinToken == "" {
+		return fmt.Errorf("infra.swarm_join_token is required when infra is enabled")
+	}
+	if c.InfraSecret == "" {
+		return fmt.Errorf("infra.infra_secret is required when infra is enabled")
+	}
+	// Defaults
+	if c.MaxServers == 0 {
+		c.MaxServers = 10
+	}
+	if c.GracePeriod == "" {
+		c.GracePeriod = "1h"
+	}
+	if c.Datacenter == "" {
+		c.Datacenter = "fsn1"
+	}
+	if c.ServerType == "" {
+		c.ServerType = "cx22"
+	}
+	return nil
+}
+
 // Load reads configuration from config.yaml and environment variables.
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
