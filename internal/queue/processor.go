@@ -27,14 +27,18 @@ type JobLogBackend interface {
 	WriteJobAttempt(ctx context.Context, jobID string, attempt logging.JobAttemptLog) error
 }
 
+// WorkerDispatchFunc routes a job to the worker runtime.
+type WorkerDispatchFunc func(ctx context.Context, job db.ClaimPendingJobsRow) error
+
 // Processor claims and dispatches queued jobs.
 type Processor struct {
-	pool       *pgxpool.Pool
-	queries    *db.Queries
-	registry   *executor.Registry
-	interval   time.Duration
-	logBackend JobLogBackend
-	stop       chan struct{}
+	pool           *pgxpool.Pool
+	queries        *db.Queries
+	registry       *executor.Registry
+	interval       time.Duration
+	workerDispatch WorkerDispatchFunc
+	logBackend     JobLogBackend
+	stop           chan struct{}
 }
 
 // NewProcessor creates a new queue processor.
@@ -51,6 +55,11 @@ func NewProcessor(pool *pgxpool.Pool, registry *executor.Registry, interval time
 // SetLogBackend sets the logging backend for writing job attempts.
 func (p *Processor) SetLogBackend(lb JobLogBackend) {
 	p.logBackend = lb
+}
+
+// SetWorkerDispatch sets the callback used to route worker-runtime jobs.
+func (p *Processor) SetWorkerDispatch(fn WorkerDispatchFunc) {
+	p.workerDispatch = fn
 }
 
 // Start begins the processing loop.
@@ -74,6 +83,8 @@ func (p *Processor) loop(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			p.tick(ctx)
+			p.processKillRequests(ctx)
+			p.processAsyncJobs(ctx)
 		case <-p.stop:
 			return
 		case <-ctx.Done():
@@ -110,6 +121,22 @@ func (p *Processor) tick(ctx context.Context) {
 func (p *Processor) dispatch(ctx context.Context, job db.ClaimPendingJobsRow) {
 	log := slog.With("job_id", job.ID, "queue_id", job.QueueID)
 
+	runtime := job.QueueRuntime
+	if job.RuntimeOverride != nil && *job.RuntimeOverride != "" {
+		runtime = *job.RuntimeOverride
+	}
+	if runtime == "worker" && p.workerDispatch != nil {
+		if err := p.workerDispatch(ctx, job); err != nil {
+			log.Error("queue: worker dispatch failed", "error", err)
+			_ = p.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+				ID:            job.ID,
+				State:         string(jobstate.WaitingForWorker),
+				WaitingReason: strPtr("Worker dispatch failed: " + err.Error()),
+			})
+		}
+		return
+	}
+
 	// Check queue concurrency
 	running, err := p.queries.CountRunningByQueue(ctx, job.QueueID)
 	if err != nil {
@@ -132,8 +159,8 @@ func (p *Processor) dispatch(ctx context.Context, job db.ClaimPendingJobsRow) {
 	// Transition to running
 	attempt := job.Attempt + 1
 	err = p.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
-		ID:    job.ID,
-		State: string(jobstate.Running),
+		ID:      job.ID,
+		State:   string(jobstate.Running),
 		Attempt: &attempt,
 	})
 	if err != nil {
@@ -142,9 +169,10 @@ func (p *Processor) dispatch(ctx context.Context, job db.ClaimPendingJobsRow) {
 	}
 
 	// Snapshot config on first attempt
+	methodConfig := BuildJobMethodConfig(job.QueueMethodConfig, job.Payload)
 	if attempt == 1 {
 		snapshot, _ := json.Marshal(map[string]any{
-			"method_config":    job.QueueMethodConfig,
+			"method_config":    methodConfig,
 			"execution_method": job.ExecutionMethod,
 		})
 		p.queries.SnapshotJobConfig(ctx, db.SnapshotJobConfigParams{
@@ -155,11 +183,6 @@ func (p *Processor) dispatch(ctx context.Context, job db.ClaimPendingJobsRow) {
 
 	// Create attempt record
 	start := time.Now().UTC()
-	var methodConfig map[string]any
-	if len(job.QueueMethodConfig) > 0 {
-		json.Unmarshal(job.QueueMethodConfig, &methodConfig)
-	}
-
 	requestJSON, _ := json.Marshal(methodConfig)
 	attemptID := id.NewJobAttempt()
 	p.queries.CreateJobAttempt(ctx, db.CreateJobAttemptParams{
@@ -172,105 +195,34 @@ func (p *Processor) dispatch(ctx context.Context, job db.ClaimPendingJobsRow) {
 
 	// Execute
 	log.Info("queue: dispatching", "method", job.ExecutionMethod, "attempt", attempt)
-	params := executor.ExecuteParams{
+	params := executor.StartParams{
 		RunID:        job.ID,
 		WorkspaceID:  job.WorkspaceID,
 		MethodConfig: methodConfig,
 	}
 
-	result, _ := method.Execute(ctx, params)
-	finished := time.Now().UTC()
-	durationMs := finished.Sub(start).Milliseconds()
-
-	// Record attempt result
-	var responseCode *int32
-	if result.ResponseCode != nil {
-		rc := int32(*result.ResponseCode)
-		responseCode = &rc
-	}
-
-	var errMsg *string
-	if result.Error != nil {
-		s := result.Error.Error()
-		errMsg = &s
-	}
-
-	// Truncate response body
-	respBody := result.ResponseBody
-	truncated := false
-	maxSize := int(job.MaxResponseSize)
-	if len(respBody) > maxSize {
-		respBody = respBody[:maxSize]
-		truncated = true
-	}
-
-	p.queries.FinishJobAttempt(ctx, db.FinishJobAttemptParams{
-		ID:           attemptID,
-		FinishedAt:   dbutil.Timestamptz(finished),
-		DurationMs:   &durationMs,
-		ResponseCode: responseCode,
-		ResponseBody: &respBody,
-		Truncated:    truncated,
-		ErrorMessage: errMsg,
-	})
-
-	// Write to logging backend
-	if p.logBackend != nil {
-		var rc *int
-		if responseCode != nil {
-			v := int(*responseCode)
-			rc = &v
+	startResult, _ := method.Start(ctx, params)
+	if startResult.Result == nil {
+		handle := startResult.Handle
+		if handle.MethodName == "" {
+			handle = executor.Handle{MethodName: job.ExecutionMethod, RunID: job.ID, Data: make(map[string]any)}
 		}
-		em := ""
-		if errMsg != nil {
-			em = *errMsg
+		if err := p.saveJobExecutionHandle(ctx, job.ID, handle); err != nil {
+			log.Error("queue: save async handle failed", "error", err)
+			p.failJob(ctx, job.ID, 0)
+			return
 		}
-		fin := finished
-		p.logBackend.WriteJobAttempt(ctx, job.ID, logging.JobAttemptLog{
-			AttemptNumber: int(attempt),
-			StartedAt:     start,
-			FinishedAt:    &fin,
-			DurationMs:    durationMs,
-			ResponseCode:  rc,
-			ResponseBody:  respBody,
-			ErrorMessage:  em,
-		})
+		log.Info("queue: async execution accepted", "method", job.ExecutionMethod)
+		return
 	}
+	result := *startResult.Result
 
 	// Determine max attempts for this job
 	maxAttempts := job.QueueMaxAttempts
 	if job.MaxAttempts != nil {
 		maxAttempts = *job.MaxAttempts
 	}
-
-	if result.IsSuccess() {
-		// Success
-		durMs := durationMs
-		p.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
-			ID:         job.ID,
-			State:      string(jobstate.Completed),
-			DurationMs: &durMs,
-		})
-		log.Info("queue: completed", "duration_ms", durationMs)
-		return
-	}
-
-	// Failure — check retries
-	if attempt < maxAttempts {
-		nextAt := calculateBackoff(finished, attempt, getBackoffList(job))
-		p.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
-			ID:            job.ID,
-			State:         string(jobstate.Retrying),
-			Attempt:       &attempt,
-			NextAttemptAt: dbutil.Timestamptz(nextAt),
-		})
-		log.Info("queue: retrying", "attempt", attempt, "max", maxAttempts, "next_at", nextAt)
-		return
-	}
-
-	// Final failure
-	p.failJob(ctx, job.ID, durationMs)
-	log.Info("queue: failed", "attempts", attempt)
+	p.finalizeJobResult(ctx, job.ID, attemptID, attempt, job.State, start, maxAttempts, getRetryBackoffString(job), job.MaxResponseSize, result, false)
 }
 
 func (p *Processor) failJob(ctx context.Context, jobID string, durationMs int64) {
@@ -323,11 +275,18 @@ func calculateBackoff(from time.Time, attempt int32, backoffs []time.Duration) t
 
 // getBackoffList parses the comma-separated backoff string.
 func getBackoffList(job db.ClaimPendingJobsRow) []time.Duration {
+	return getBackoffListFromString(getRetryBackoffString(job))
+}
+
+func getRetryBackoffString(job db.ClaimPendingJobsRow) string {
 	backoffStr := job.QueueRetryBackoff
 	if job.RetryBackoff != nil {
 		backoffStr = *job.RetryBackoff
 	}
+	return backoffStr
+}
 
+func getBackoffListFromString(backoffStr string) []time.Duration {
 	var result []time.Duration
 	for _, part := range strings.Split(backoffStr, ",") {
 		d, err := time.ParseDuration(strings.TrimSpace(part))
@@ -338,3 +297,5 @@ func getBackoffList(job db.ClaimPendingJobsRow) []time.Duration {
 	}
 	return result
 }
+
+func strPtr(s string) *string { return &s }

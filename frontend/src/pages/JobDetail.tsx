@@ -3,18 +3,16 @@ import { useState } from 'react'
 import { StateBadge } from '@/components/domain/state-badge'
 import { formatDuration } from '@/lib/utils'
 import { api } from '@/api/client'
-import { useQuery } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useJob } from '@/hooks/use-api'
 
 interface JobDetailProps {
   jobId: string
 }
 
 export function JobDetail({ jobId }: JobDetailProps) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['job', jobId],
-    queryFn: () => api.getJob(jobId),
-    enabled: !!jobId,
-  })
+  const qc = useQueryClient()
+  const { data, isLoading } = useJob(jobId)
 
   const job = data?.data?.job
   const attempts = data?.data?.attempts || []
@@ -27,17 +25,26 @@ export function JobDetail({ jobId }: JobDetailProps) {
   const handleCancel = async () => {
     if (confirm('Cancel this job?')) {
       await api.cancelJob(jobId)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['job', jobId] }),
+        qc.invalidateQueries({ queryKey: ['jobs'] }),
+      ])
     }
   }
 
   const handleReplay = async () => {
     await api.replayJob(jobId)
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['job', jobId] }),
+      qc.invalidateQueries({ queryKey: ['jobs'] }),
+    ])
   }
 
   if (isLoading) return <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
   if (!job) return <div className="p-8 text-center text-sm text-muted-foreground">Job not found</div>
 
   const isTerminal = ['completed', 'failed', 'killed', 'cancelled'].includes(job.state)
+  const isStopping = job.state === 'kill_requested'
 
   return (
     <div className="space-y-6">
@@ -66,8 +73,8 @@ export function JobDetail({ jobId }: JobDetailProps) {
             </button>
           )}
           {!isTerminal && (
-            <button onClick={handleCancel} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm hover:bg-red-500/20 transition-colors">
-              <XCircle size={13} /> Cancel
+            <button onClick={handleCancel} disabled={isStopping} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm hover:bg-red-500/20 transition-colors disabled:opacity-60">
+              <XCircle size={13} /> {isStopping ? 'Stopping...' : 'Cancel'}
             </button>
           )}
         </div>
@@ -106,6 +113,7 @@ export function JobDetail({ jobId }: JobDetailProps) {
           <div className="flex justify-between"><span className="text-muted-foreground">Job ID</span><span className="font-mono">{job.id}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Queue ID</span><span className="font-mono">{job.queue_id}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">State</span><span>{job.state}</span></div>
+          {job.state === 'kill_requested' && <div className="flex justify-between"><span className="text-muted-foreground">Stop Status</span><span>Kill requested; waiting for executor confirmation</span></div>}
           <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span>{new Date(job.created_at).toLocaleString()}</span></div>
           {job.idempotency_key && <div className="flex justify-between"><span className="text-muted-foreground">Idempotency Key</span><span className="font-mono">{job.idempotency_key}</span></div>}
           {job.replayed_from_job_id && <div className="flex justify-between"><span className="text-muted-foreground">Replayed From</span><span className="font-mono">{job.replayed_from_job_id}</span></div>}

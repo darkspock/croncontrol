@@ -12,7 +12,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, email, name, auth_provider, password_hash, email_verified, active_workspace_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, email, name, auth_provider, password_hash, email_verified, is_platform_admin, active_workspace_id, last_login_at, created_at, updated_at
+RETURNING id, email, name, auth_provider, password_hash, email_verified, active_workspace_id, last_login_at, created_at, updated_at, is_platform_admin
 `
 
 type CreateUserParams struct {
@@ -43,17 +43,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.AuthProvider,
 		&i.PasswordHash,
 		&i.EmailVerified,
-		&i.IsPlatformAdmin,
 		&i.ActiveWorkspaceID,
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsPlatformAdmin,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, auth_provider, password_hash, email_verified, is_platform_admin, active_workspace_id, last_login_at, created_at, updated_at FROM users WHERE email = $1
+SELECT id, email, name, auth_provider, password_hash, email_verified, active_workspace_id, last_login_at, created_at, updated_at, is_platform_admin FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -66,17 +66,17 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.AuthProvider,
 		&i.PasswordHash,
 		&i.EmailVerified,
-		&i.IsPlatformAdmin,
 		&i.ActiveWorkspaceID,
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsPlatformAdmin,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, name, auth_provider, password_hash, email_verified, is_platform_admin, active_workspace_id, last_login_at, created_at, updated_at FROM users WHERE id = $1
+SELECT id, email, name, auth_provider, password_hash, email_verified, active_workspace_id, last_login_at, created_at, updated_at, is_platform_admin FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -89,11 +89,11 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.AuthProvider,
 		&i.PasswordHash,
 		&i.EmailVerified,
-		&i.IsPlatformAdmin,
 		&i.ActiveWorkspaceID,
 		&i.LastLoginAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsPlatformAdmin,
 	)
 	return i, err
 }

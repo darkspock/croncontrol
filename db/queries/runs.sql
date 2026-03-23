@@ -75,6 +75,65 @@ WHERE id = $1;
 -- name: SnapshotRunConfig :exec
 UPDATE runs SET effective_config = $2, updated_at = now() WHERE id = $1;
 
+-- name: SetRunChoiceConfig :exec
+UPDATE runs SET choice_config = $2, updated_at = now() WHERE id = $1;
+
+-- name: SetRunChosenIndex :exec
+UPDATE runs SET chosen_index = $2, updated_at = now() WHERE id = $1;
+
+-- name: SaveRunExecutionHandle :exec
+UPDATE runs SET
+    execution_handle = $2,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: ClearRunExecutionHandle :exec
+UPDATE runs SET
+    execution_handle = NULL,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: UpdateRunOffsets :exec
+UPDATE runs SET
+    stdout_offset = $2,
+    stderr_offset = $3,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: GetRunExecutionHandle :one
+SELECT execution_handle, stdout_offset, stderr_offset
+FROM runs
+WHERE id = $1 AND execution_handle IS NOT NULL;
+
+-- name: ListActiveAsyncRuns :many
+SELECT
+    r.id,
+    r.workspace_id,
+    r.process_id,
+    r.attempt,
+    r.state,
+    r.started_at,
+    COALESCE(ra.id, '') AS attempt_id,
+    r.execution_handle,
+    r.stdout_offset,
+    r.stderr_offset,
+    p.execution_method
+FROM runs r
+JOIN processes p ON p.id = r.process_id
+LEFT JOIN LATERAL (
+    SELECT id
+    FROM run_attempts
+    WHERE run_id = r.id AND finished_at IS NULL
+    ORDER BY attempt_number DESC
+    LIMIT 1
+) ra ON true
+WHERE r.state IN ('running', 'kill_requested')
+  AND r.execution_handle IS NOT NULL;
+
 -- name: ListRuns :many
 SELECT r.*, p.name AS process_name
 FROM runs r

@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,12 +25,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/croncontrol/croncontrol/internal/db"
+	"github.com/croncontrol/croncontrol/internal/dbutil"
+	"github.com/croncontrol/croncontrol/internal/jobstate"
 )
 
 // Task represents a unit of work dispatched to a worker.
 type Task struct {
 	ID              string         `json:"id"`               // run or job ID
 	Type            string         `json:"type"`             // "run" or "job"
+	AttemptID       string         `json:"attempt_id,omitempty"`
 	WorkspaceID     string         `json:"workspace_id"`
 	ExecutionMethod string         `json:"execution_method"` // http, ssh, ssm, k8s
 	MethodConfig    map[string]any `json:"method_config"`
@@ -40,6 +44,7 @@ type Task struct {
 // TaskResult is reported back by the worker after execution.
 type TaskResult struct {
 	TaskID       string `json:"task_id"`
+	AttemptID    string `json:"attempt_id,omitempty"`
 	ExitCode     *int   `json:"exit_code,omitempty"`
 	ResponseCode *int   `json:"response_code,omitempty"`
 	Stdout       string `json:"stdout,omitempty"`
@@ -101,20 +106,24 @@ func (d *Dispatcher) Dispatch(ctx context.Context, workspaceID string, task Task
 		selectedWorker = &w
 	}
 
-	// 2. Label matching → least-loaded (simplified: just pick any online worker)
+	// 2. Label matching → least-loaded compatible worker
 	if selectedWorker == nil {
 		workers, err := d.queries.ListOnlineWorkers(ctx, db.ListOnlineWorkersParams{
 			WorkspaceID: workspaceID,
-			Limit:       1,
+			Limit:       100,
 		})
 		if err != nil || len(workers) == 0 {
 			return "", nil // no worker available
 		}
-		selectedWorker = &workers[0]
+
+		selectedWorker = d.selectWorker(ctx, workers, workerLabels)
+		if selectedWorker == nil {
+			return "", nil
+		}
 	}
 
 	// Check worker max_concurrency before dispatching
-	runningCount, err := d.queries.CountRunningByWorker(ctx, selectedWorker.ID)
+	runningCount, err := d.countActiveByWorker(ctx, selectedWorker.ID)
 	if err != nil {
 		slog.Error("worker: count running", "error", err)
 		return "", nil
@@ -143,6 +152,33 @@ func (d *Dispatcher) Dispatch(ctx context.Context, workspaceID string, task Task
 		slog.Warn("worker: task queue full", "worker", selectedWorker.ID)
 		return "", nil
 	}
+}
+
+func (d *Dispatcher) selectWorker(ctx context.Context, workers []db.Worker, workerLabels json.RawMessage) *db.Worker {
+	var selected *db.Worker
+	var bestLoad int64 = 1<<62 - 1
+
+	for i := range workers {
+		w := &workers[i]
+		if !matchesWorkerLabels(w.Labels, workerLabels) {
+			continue
+		}
+
+		load, err := d.countActiveByWorker(ctx, w.ID)
+		if err != nil {
+			slog.Error("worker: count active", "worker", w.ID, "error", err)
+			continue
+		}
+		if load >= int64(w.MaxConcurrency) {
+			continue
+		}
+		if selected == nil || load < bestLoad {
+			selected = w
+			bestLoad = load
+		}
+	}
+
+	return selected
 }
 
 // PollTask is called by the worker binary via long-poll.
@@ -194,26 +230,83 @@ func (d *Dispatcher) ProcessResult(ctx context.Context, result TaskResult) error
 	taskID := result.TaskID
 	if len(taskID) > 4 && taskID[:4] == "run_" {
 		state := "completed"
-		if !isSuccess {
+		row := d.pool.QueryRow(ctx, "SELECT state FROM runs WHERE id = $1", taskID)
+		var currentState string
+		if err := row.Scan(&currentState); err == nil && currentState == "kill_requested" {
+			state = "killed"
+		} else if !isSuccess {
 			state = "failed"
 		}
-		return d.queries.UpdateRunState(ctx, db.UpdateRunStateParams{
+		err := d.queries.UpdateRunState(ctx, db.UpdateRunStateParams{
 			ID:         taskID,
 			State:      state,
 			FinishedAt: timestamptzNow(),
 			DurationMs: &result.DurationMs,
 			ExitCode:   exitCode,
 		})
+		if err == nil && state == "killed" {
+			return nil
+		}
+		return err
 	}
 
 	if len(taskID) > 4 && taskID[:4] == "job_" {
-		state := "completed"
-		if !isSuccess {
-			state = "failed"
+		row := d.pool.QueryRow(ctx, "SELECT workspace_id, state FROM jobs WHERE id = $1", taskID)
+		var workspaceID, currentState string
+		if err := row.Scan(&workspaceID, &currentState); err != nil {
+			return err
 		}
+
+		job, err := d.queries.GetJobWithQueue(ctx, db.GetJobWithQueueParams{
+			ID:          taskID,
+			WorkspaceID: workspaceID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if result.AttemptID != "" {
+			if err := d.finishJobAttempt(ctx, job, result); err != nil {
+				return err
+			}
+		}
+
+		durMs := result.DurationMs
+		if currentState == string(jobstate.KillRequested) {
+			return d.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+				ID:         taskID,
+				State:      string(jobstate.Killed),
+				DurationMs: &durMs,
+			})
+		}
+
+		if isSuccess {
+			return d.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+				ID:         taskID,
+				State:      string(jobstate.Completed),
+				DurationMs: &durMs,
+			})
+		}
+
+		maxAttempts := job.QueueMaxAttempts
+		if job.MaxAttempts != nil {
+			maxAttempts = *job.MaxAttempts
+		}
+		if job.Attempt < maxAttempts {
+			nextAttempt := job.Attempt + 1
+			nextAt := calculateBackoff(time.Now().UTC(), nextAttempt, parseBackoffList(job.QueueRetryBackoff, job.RetryBackoff))
+			return d.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+				ID:            taskID,
+				State:         string(jobstate.Retrying),
+				Attempt:       &nextAttempt,
+				NextAttemptAt: dbutil.Timestamptz(nextAt),
+				DurationMs:    &durMs,
+			})
+		}
+
 		return d.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
 			ID:         taskID,
-			State:      state,
+			State:      string(jobstate.Failed),
 			DurationMs: &result.DurationMs,
 		})
 	}
@@ -229,6 +322,129 @@ func (d *Dispatcher) getOrCreateChannel(workerID string) chan Task {
 	ch := make(chan Task, 10)
 	actual, _ := d.taskQueues.LoadOrStore(workerID, ch)
 	return actual.(chan Task)
+}
+
+func (d *Dispatcher) countActiveByWorker(ctx context.Context, workerID string) (int64, error) {
+	row := d.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM runs WHERE worker_id = $1 AND state = 'running') +
+			(SELECT count(*) FROM jobs WHERE worker_id = $1 AND state = 'running')
+	`, workerID)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (d *Dispatcher) finishJobAttempt(ctx context.Context, job db.GetJobWithQueueRow, result TaskResult) error {
+	var responseCode *int32
+	if result.ResponseCode != nil {
+		rc := int32(*result.ResponseCode)
+		responseCode = &rc
+	}
+
+	var errMsg *string
+	if result.Error != "" {
+		errMsg = &result.Error
+	}
+
+	respBody := result.ResponseBody
+	truncated := false
+	originalSize := int64(len(respBody))
+	maxSize := int(job.MaxResponseSize)
+	if maxSize > 0 && len(respBody) > maxSize {
+		respBody = respBody[:maxSize]
+		truncated = true
+	}
+
+	return d.queries.FinishJobAttempt(ctx, db.FinishJobAttemptParams{
+		ID:           result.AttemptID,
+		FinishedAt:   dbutil.Timestamptz(time.Now().UTC()),
+		DurationMs:   &result.DurationMs,
+		ResponseCode: responseCode,
+		Truncated:    truncated,
+		ResponseBody: &respBody,
+		OriginalSize: &originalSize,
+		ErrorMessage: errMsg,
+	})
+}
+
+func calculateBackoff(from time.Time, attempt int32, backoffs []time.Duration) time.Time {
+	if len(backoffs) == 0 {
+		return from.Add(time.Minute)
+	}
+	idx := int(attempt) - 1
+	if idx >= len(backoffs) {
+		idx = len(backoffs) - 1
+	}
+	return from.Add(backoffs[idx])
+}
+
+func parseBackoffList(defaultBackoff string, override *string) []time.Duration {
+	backoffStr := defaultBackoff
+	if override != nil {
+		backoffStr = *override
+	}
+
+	var result []time.Duration
+	for _, part := range strings.Split(backoffStr, ",") {
+		d, err := time.ParseDuration(strings.TrimSpace(part))
+		if err != nil {
+			continue
+		}
+		result = append(result, d)
+	}
+	return result
+}
+
+func matchesWorkerLabels(workerLabels, requiredLabels json.RawMessage) bool {
+	if len(requiredLabels) == 0 || string(requiredLabels) == "null" {
+		return true
+	}
+
+	var requiredArray []string
+	if err := json.Unmarshal(requiredLabels, &requiredArray); err == nil {
+		var workerArray []string
+		if err := json.Unmarshal(workerLabels, &workerArray); err != nil {
+			return false
+		}
+		available := make(map[string]struct{}, len(workerArray))
+		for _, label := range workerArray {
+			available[label] = struct{}{}
+		}
+		for _, label := range requiredArray {
+			if _, ok := available[label]; !ok {
+				return false
+			}
+		}
+		return true
+	}
+
+	var requiredMap map[string]any
+	if err := json.Unmarshal(requiredLabels, &requiredMap); err == nil {
+		var workerMap map[string]any
+		if err := json.Unmarshal(workerLabels, &workerMap); err != nil {
+			return false
+		}
+		for key, value := range requiredMap {
+			if workerValue, ok := workerMap[key]; !ok || !equalJSONValue(workerValue, value) {
+				return false
+			}
+		}
+		return true
+	}
+
+	return false
+}
+
+func equalJSONValue(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return string(leftJSON) == string(rightJSON)
 }
 
 // statusLoop periodically checks for stale workers and updates their status.

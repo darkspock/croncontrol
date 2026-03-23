@@ -6,12 +6,14 @@ import { ORIGIN_LABELS } from '@/lib/constants'
 import { useRun, useRunOutput } from '@/hooks/use-api'
 import { formatDuration } from '@/lib/utils'
 import { api } from '@/api/client'
+import { useQueryClient } from '@tanstack/react-query'
 
 interface RunDetailProps {
   runId: string
 }
 
 export function RunDetail({ runId }: RunDetailProps) {
+  const qc = useQueryClient()
   const { data, isLoading } = useRun(runId)
   const { data: outputData } = useRunOutput(runId)
 
@@ -29,6 +31,22 @@ export function RunDetail({ runId }: RunDetailProps) {
   const handleKill = async () => {
     if (confirm('Are you sure you want to kill this run?')) {
       await api.killRun(runId)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['run', runId] }),
+        qc.invalidateQueries({ queryKey: ['run-output', runId] }),
+        qc.invalidateQueries({ queryKey: ['runs'] }),
+      ])
+    }
+  }
+
+  const handleCancel = async () => {
+    if (confirm('Cancel this run?')) {
+      await api.cancelRun(runId)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['run', runId] }),
+        qc.invalidateQueries({ queryKey: ['run-output', runId] }),
+        qc.invalidateQueries({ queryKey: ['runs'] }),
+      ])
     }
   }
 
@@ -45,7 +63,9 @@ export function RunDetail({ runId }: RunDetailProps) {
     return <div className="p-8 text-center text-sm text-muted-foreground">Run not found</div>
   }
 
-  const isRunning = run.state === 'running' || run.state === 'pending'
+  const canCancel = ['pending', 'queued', 'waiting_for_worker', 'retrying'].includes(run.state)
+  const canKill = ['running', 'kill_requested'].includes(run.state)
+  const isActive = canCancel || canKill
 
   return (
     <div className="space-y-6">
@@ -80,7 +100,7 @@ export function RunDetail({ runId }: RunDetailProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 relative z-10">
-          {!isRunning && (
+          {!isActive && (
             <button
               type="button"
               onClick={async () => {
@@ -96,13 +116,23 @@ export function RunDetail({ runId }: RunDetailProps) {
               <RotateCcw size={14} /> Replay
             </button>
           )}
-          {isRunning && (
+          {canCancel && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors cursor-pointer"
+            >
+              <XCircle size={13} /> Cancel
+            </button>
+          )}
+          {canKill && (
             <button
               type="button"
               onClick={handleKill}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors cursor-pointer"
+              disabled={run.state === 'kill_requested'}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors cursor-pointer disabled:opacity-60"
             >
-              <XCircle size={13} /> Kill
+              <XCircle size={13} /> {run.state === 'kill_requested' ? 'Stopping...' : 'Kill'}
             </button>
           )}
         </div>
@@ -146,7 +176,7 @@ export function RunDetail({ runId }: RunDetailProps) {
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium">Progress</span>
-            {isRunning && <span className="text-xs text-muted-foreground font-mono">polling 5s</span>}
+            {isActive && <span className="text-xs text-muted-foreground font-mono">polling 5s</span>}
           </div>
           <ProgressBar
             total={run.progress_total}
@@ -161,7 +191,7 @@ export function RunDetail({ runId }: RunDetailProps) {
       {(stdout || stderr) && (
         <div>
           <span className="text-sm font-medium mb-3 block">Output</span>
-          <OutputViewer stdout={stdout} stderr={stderr} autoScroll={isRunning} />
+          <OutputViewer stdout={stdout} stderr={stderr} autoScroll={isActive} />
         </div>
       )}
 
@@ -172,6 +202,7 @@ export function RunDetail({ runId }: RunDetailProps) {
           <Detail label="Run ID" value={run.id} mono />
           <Detail label="Process ID" value={run.process_id} mono />
           <Detail label="State" value={run.state} />
+          {run.state === 'kill_requested' && <Detail label="Stop Status" value="Kill requested; waiting for executor confirmation" />}
           <Detail label="Origin" value={ORIGIN_LABELS[run.origin] || run.origin} />
           <Detail label="Scheduled" value={run.scheduled_at ? new Date(run.scheduled_at).toLocaleString() : '—'} />
           <Detail label="Started" value={run.started_at ? new Date(run.started_at).toLocaleString() : '—'} />

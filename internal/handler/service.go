@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -30,10 +31,12 @@ import (
 	"github.com/croncontrol/croncontrol/internal/crypto"
 	"github.com/croncontrol/croncontrol/internal/executor"
 	"github.com/croncontrol/croncontrol/internal/id"
+	"github.com/croncontrol/croncontrol/internal/jobstate"
 	"github.com/croncontrol/croncontrol/internal/notifier"
 	"github.com/croncontrol/croncontrol/internal/runstate"
 	"github.com/croncontrol/croncontrol/internal/infra"
 	"github.com/croncontrol/croncontrol/internal/storage"
+	"github.com/croncontrol/croncontrol/internal/worker"
 )
 
 // Service holds all handler dependencies.
@@ -47,11 +50,12 @@ type Service struct {
 	artifactStore  storage.Backend
 	encryptionKey  []byte
 	provisioner    *infra.Provisioner
+	workerDisp     *worker.Dispatcher
 }
 
 // NewService creates a new handler service.
-func NewService(q *db.Queries, pool *pgxpool.Pool, orch *executor.Orchestrator, dep *dependency.Resolver, n *notifier.Notifier) *Service {
-	return &Service{queries: q, pool: pool, orchestrator: orch, depResolver: dep, notifier: n}
+func NewService(q *db.Queries, pool *pgxpool.Pool, orch *executor.Orchestrator, dep *dependency.Resolver, n *notifier.Notifier, wd *worker.Dispatcher) *Service {
+	return &Service{queries: q, pool: pool, orchestrator: orch, depResolver: dep, notifier: n, workerDisp: wd}
 }
 
 // SetGoogleAuth configures Google OAuth support. Nil disables it.
@@ -564,6 +568,8 @@ func (s *Service) CreateProcess(w http.ResponseWriter, r *http.Request) {
 		ExecutionTimeout: execTimeout,
 		HeartbeatTimeout: pgtype.Interval{Valid: false},
 		TimeoutAction:    timeoutAction,
+		WorkerID:         getNullableString(req, "worker_id", nil),
+		WorkerLabels:     getJSONBytes(req, "worker_labels", nil),
 		Environment:      env,
 		Tags:             tags,
 		Enabled:          true,
@@ -642,9 +648,16 @@ func (s *Service) UpdateProcess(w http.ResponseWriter, r *http.Request) {
 		ExecutionTimeout: existing.ExecutionTimeout,
 		HeartbeatTimeout: existing.HeartbeatTimeout,
 		TimeoutAction:    timeoutAction,
+		SshCredentialID:  existing.SshCredentialID,
+		SsmProfileID:     existing.SsmProfileID,
+		K8sClusterID:     existing.K8sClusterID,
+		WorkerID:         getNullableString(req, "worker_id", existing.WorkerID),
+		WorkerLabels:     getJSONBytes(req, "worker_labels", existing.WorkerLabels),
+		DependsOnProcessID: existing.DependsOnProcessID,
+		DependencyType:     existing.DependencyType,
 		Environment:      env,
-		Tags:             existing.Tags,
-		Enabled:          existing.Enabled,
+		Tags:             getStringArray(req, "tags", existing.Tags),
+		Enabled:          getBool(req, "enabled", existing.Enabled),
 	})
 	if err != nil {
 		slog.Error("update process failed", "error", err)
@@ -774,14 +787,46 @@ func (s *Service) GetRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) CancelRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
-	s.queries.UpdateRunState(r.Context(), db.UpdateRunStateParams{
-		ID: runID, State: string(runstate.Cancelled),
-	})
-	writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "cancelled"}})
+	wsID := auth.WorkspaceID(r.Context())
+	actor, _ := auth.GetActor(r.Context())
+
+	run, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
+
+	state := runstate.State(run.State)
+	switch state {
+	case runstate.Pending, runstate.Queued, runstate.WaitingForWorker, runstate.Paused, runstate.Retrying:
+		s.queries.UpdateRunState(r.Context(), db.UpdateRunStateParams{
+			ID:    runID,
+			State: string(runstate.Cancelled),
+		})
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "cancelled"}})
+		return
+	case runstate.Running:
+		s.queries.UpdateRunState(r.Context(), db.UpdateRunStateParams{
+			ID:                runID,
+			State:             string(runstate.KillRequested),
+			KilledByActorType: &actor.Type,
+			KilledByActorID:   &actor.ID,
+		})
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "kill_requested"}})
+		return
+	default:
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": run.State}})
+		return
+	}
 }
 
 func (s *Service) KillRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
+	wsID := auth.WorkspaceID(r.Context())
+	if _, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID}); err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
 	actor, _ := auth.GetActor(r.Context())
 	actorType := actor.Type
 	actorID := actor.ID
@@ -838,6 +883,11 @@ func (s *Service) ReplayRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) GetRunOutput(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
+	wsID := auth.WorkspaceID(r.Context())
+	if _, err := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID}); err != nil {
+		writeError(w, 404, "NOT_FOUND", "Run not found", "")
+		return
+	}
 	streamVal := r.URL.Query().Get("stream")
 	output, err := s.queries.GetRunOutput(r.Context(), db.GetRunOutputParams{RunID: runID, Column2: streamVal})
 	if err != nil {
@@ -954,6 +1004,9 @@ func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 		RetryBackoff:    retryBackoff,
 		JobTimeout:      pgtype.Interval{Microseconds: 300 * 1000000, Valid: true}, // 5 min
 		MaxResponseSize: 5 * 1024 * 1024,
+		WorkerID:        getNullableString(req, "worker_id", nil),
+		WorkerLabels:    getJSONBytes(req, "worker_labels", nil),
+		Tags:            getStringArray(req, "tags", nil),
 		Enabled:         true,
 	})
 	if err != nil {
@@ -962,6 +1015,63 @@ func (s *Service) CreateQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 201, map[string]any{"data": q})
+}
+
+func (s *Service) UpdateQueue(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	queueID := chi.URLParam(r, "id")
+
+	existing, err := s.queries.GetQueue(r.Context(), db.GetQueueParams{ID: queueID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Queue not found", "")
+		return
+	}
+
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request body", "")
+		return
+	}
+
+	methodConfig := existing.MethodConfig
+	if mc, ok := req["method_config"]; ok {
+		methodConfig, _ = json.Marshal(mc)
+	}
+
+	jobTimeout := existing.JobTimeout
+	if v, ok := req["job_timeout"].(string); ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			jobTimeout = pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
+		}
+	}
+
+	q, err := s.queries.UpdateQueue(r.Context(), db.UpdateQueueParams{
+		ID:              queueID,
+		WorkspaceID:     wsID,
+		Name:            getStr(req, "name", existing.Name),
+		ExecutionMethod: getStr(req, "execution_method", existing.ExecutionMethod),
+		Runtime:         getStr(req, "runtime", existing.Runtime),
+		MethodConfig:    methodConfig,
+		Concurrency:     getInt32(req, "concurrency", existing.Concurrency),
+		MaxAttempts:     getInt32(req, "max_attempts", existing.MaxAttempts),
+		RetryBackoff:    getStr(req, "retry_backoff", existing.RetryBackoff),
+		JobTimeout:      jobTimeout,
+		MaxResponseSize: getInt32(req, "max_response_size", existing.MaxResponseSize),
+		SshCredentialID: getNullableString(req, "ssh_credential_id", existing.SshCredentialID),
+		SsmProfileID:    getNullableString(req, "ssm_profile_id", existing.SsmProfileID),
+		K8sClusterID:    getNullableString(req, "k8s_cluster_id", existing.K8sClusterID),
+		WorkerID:        getNullableString(req, "worker_id", existing.WorkerID),
+		WorkerLabels:    getJSONBytes(req, "worker_labels", existing.WorkerLabels),
+		Tags:            getStringArray(req, "tags", existing.Tags),
+		Enabled:         getBool(req, "enabled", existing.Enabled),
+	})
+	if err != nil {
+		slog.Error("update queue failed", "error", err)
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to update queue", err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"data": q})
 }
 
 func (s *Service) GetQueue(w http.ResponseWriter, r *http.Request) {
@@ -1132,10 +1242,32 @@ func (s *Service) GetJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) CancelJob(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
 	jobID := chi.URLParam(r, "id")
 	reason := "manual"
-	s.queries.CancelJob(r.Context(), db.CancelJobParams{ID: jobID, CancelReason: &reason})
-	writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "cancelled"}})
+
+	job, err := s.queries.GetJob(r.Context(), db.GetJobParams{ID: jobID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Job not found", "")
+		return
+	}
+
+	switch jobstate.State(job.State) {
+	case jobstate.Pending, jobstate.WaitingForWorker, jobstate.Retrying:
+		s.queries.CancelJob(r.Context(), db.CancelJobParams{ID: jobID, CancelReason: &reason})
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "cancelled"}})
+		return
+	case jobstate.Running:
+		_ = s.queries.UpdateJobState(r.Context(), db.UpdateJobStateParams{
+			ID:           jobID,
+			State:        string(jobstate.KillRequested),
+			CancelReason: &reason,
+		})
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": "kill_requested"}})
+		return
+	default:
+		writeJSON(w, 200, map[string]any{"data": map[string]string{"status": job.State}})
+	}
 }
 
 func (s *Service) ReplayJob(w http.ResponseWriter, r *http.Request) {
@@ -1180,6 +1312,17 @@ func (s *Service) ListWorkers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"data": workers, "meta": map[string]any{"total": len(workers)}})
+}
+
+func (s *Service) GetWorker(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	workerID := chi.URLParam(r, "id")
+	worker, err := s.queries.GetWorker(r.Context(), db.GetWorkerParams{ID: workerID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Worker not found", "")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": worker})
 }
 
 // ============================================================================
@@ -1264,6 +1407,7 @@ func (s *Service) CreateWorker(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name           string `json:"name"`
 		MaxConcurrency int32  `json:"max_concurrency"`
+		Labels         any    `json:"labels"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, 400, "VALIDATION_ERROR", "Invalid request", "")
@@ -1281,12 +1425,17 @@ func (s *Service) CreateWorker(w http.ResponseWriter, r *http.Request) {
 	enrollToken := "enroll_" + generateRawAPIKey()
 	placeholderHash := auth.HashAPIKey("placeholder_" + id.NewWorker())
 	workerID := id.NewWorker()
+	var labels []byte
+	if req.Labels != nil {
+		labels, _ = json.Marshal(req.Labels)
+	}
 
 	worker, err := s.queries.CreateWorker(r.Context(), db.CreateWorkerParams{
 		ID:             workerID,
 		WorkspaceID:    wsID,
 		Name:           req.Name,
 		CredentialHash: placeholderHash,
+		Labels:         labels,
 		MaxConcurrency: req.MaxConcurrency,
 	})
 	if err != nil {
@@ -1314,6 +1463,67 @@ func (s *Service) CreateWorker(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Service) UpdateWorker(w http.ResponseWriter, r *http.Request) {
+	wsID := auth.WorkspaceID(r.Context())
+	workerID := chi.URLParam(r, "id")
+
+	existing, err := s.queries.GetWorker(r.Context(), db.GetWorkerParams{ID: workerID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 404, "NOT_FOUND", "Worker not found", "")
+		return
+	}
+
+	var req struct {
+		Name           *string `json:"name"`
+		MaxConcurrency *int32  `json:"max_concurrency"`
+		Enabled        *bool   `json:"enabled"`
+		Labels         any     `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request", "")
+		return
+	}
+
+	name := existing.Name
+	if req.Name != nil && *req.Name != "" {
+		name = *req.Name
+	}
+	maxConcurrency := existing.MaxConcurrency
+	if req.MaxConcurrency != nil && *req.MaxConcurrency > 0 {
+		maxConcurrency = *req.MaxConcurrency
+	}
+	enabled := existing.Enabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	labels := existing.Labels
+	if req.Labels != nil {
+		labels, _ = json.Marshal(req.Labels)
+	}
+
+	if _, err := s.pool.Exec(r.Context(), `
+		UPDATE workers
+		SET name = $3,
+		    max_concurrency = $4,
+		    enabled = $5,
+		    labels = $6,
+		    updated_at = now()
+		WHERE id = $1 AND workspace_id = $2
+	`, workerID, wsID, name, maxConcurrency, enabled, labels); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to update worker", err.Error())
+		return
+	}
+
+	worker, err := s.queries.GetWorker(r.Context(), db.GetWorkerParams{ID: workerID, WorkspaceID: wsID})
+	if err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to load updated worker", err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"data": worker})
+}
+
 func (s *Service) EnrollWorker(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Token string `json:"token"`
@@ -1329,7 +1539,7 @@ func (s *Service) EnrollWorker(w http.ResponseWriter, r *http.Request) {
 
 	// Hash the token to look it up in the database
 	tokenHash := hashSHA256(req.Token)
-	worker, err := s.queries.GetWorkerByEnrollmentToken(r.Context(), tokenHash)
+	worker, err := s.queries.GetWorkerByEnrollmentToken(r.Context(), &tokenHash)
 	if err != nil {
 		writeError(w, 401, "UNAUTHORIZED", "Invalid or expired enrollment token", "")
 		return
@@ -1368,6 +1578,252 @@ func (s *Service) DeleteWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func (s *Service) WorkerPoll(w http.ResponseWriter, r *http.Request) {
+	if s.workerDisp == nil {
+		writeError(w, 503, "UNAVAILABLE", "Worker runtime is not configured", "")
+		return
+	}
+
+	wrk, err := s.authenticateWorkerRequest(r)
+	if err != nil {
+		writeError(w, 401, "UNAUTHORIZED", "Invalid worker credential", "")
+		return
+	}
+
+	pollCtx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	task, err := s.workerDisp.PollTask(pollCtx, wrk.ID)
+	if err != nil {
+		if pollCtx.Err() != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to poll worker task", err.Error())
+		return
+	}
+	if task == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	now := time.Now().UTC()
+	switch task.Type {
+	case "run":
+		_ = s.queries.UpdateRunState(r.Context(), db.UpdateRunStateParams{
+			ID:        task.ID,
+			State:     string(runstate.Running),
+			StartedAt: dbutil.Timestamptz(now),
+			WorkerID:  &wrk.ID,
+		})
+	case "job":
+		job, err := s.queries.GetJob(r.Context(), db.GetJobParams{
+			ID:          task.ID,
+			WorkspaceID: wrk.WorkspaceID,
+		})
+		if err != nil {
+			writeError(w, 500, "INTERNAL_ERROR", "Failed to load job for worker execution", err.Error())
+			return
+		}
+		requestJSON, _ := json.Marshal(task.MethodConfig)
+		attemptID := id.NewJobAttempt()
+		if _, err := s.queries.CreateJobAttempt(r.Context(), db.CreateJobAttemptParams{
+			ID:            attemptID,
+			JobID:         task.ID,
+			AttemptNumber: job.Attempt,
+			StartedAt:     dbutil.Timestamptz(now),
+			Request:       requestJSON,
+			WorkerID:      &wrk.ID,
+		}); err != nil {
+			writeError(w, 500, "INTERNAL_ERROR", "Failed to create job attempt", err.Error())
+			return
+		}
+		task.AttemptID = attemptID
+		_ = s.queries.UpdateJobState(r.Context(), db.UpdateJobStateParams{
+			ID:       task.ID,
+			State:    "running",
+			WorkerID: &wrk.ID,
+		})
+	}
+
+	writeJSON(w, 200, task)
+}
+
+func (s *Service) WorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if s.workerDisp == nil {
+		writeError(w, 503, "UNAVAILABLE", "Worker runtime is not configured", "")
+		return
+	}
+
+	wrk, err := s.authenticateWorkerRequest(r)
+	if err != nil {
+		writeError(w, 401, "UNAUTHORIZED", "Invalid worker credential", "")
+		return
+	}
+
+	var req struct {
+		Version      string `json:"version"`
+		Capabilities any    `json:"capabilities"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request", "")
+		return
+	}
+
+	var caps []byte
+	if req.Capabilities != nil {
+		caps, _ = json.Marshal(req.Capabilities)
+	}
+
+	if err := s.workerDisp.ProcessHeartbeat(r.Context(), wrk.ID, caps, req.Version); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to record worker heartbeat", err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "ok"}})
+}
+
+func (s *Service) WorkerResult(w http.ResponseWriter, r *http.Request) {
+	if s.workerDisp == nil {
+		writeError(w, 503, "UNAVAILABLE", "Worker runtime is not configured", "")
+		return
+	}
+
+	_, err := s.authenticateWorkerRequest(r)
+	if err != nil {
+		writeError(w, 401, "UNAUTHORIZED", "Invalid worker credential", "")
+		return
+	}
+
+	var result worker.TaskResult
+	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request", "")
+		return
+	}
+	if result.TaskID == "" {
+		writeError(w, 400, "VALIDATION_ERROR", "task_id is required", "")
+		return
+	}
+
+	if err := s.workerDisp.ProcessResult(r.Context(), result); err != nil {
+		writeError(w, 500, "INTERNAL_ERROR", "Failed to process worker result", err.Error())
+		return
+	}
+
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "ok"}})
+}
+
+func (s *Service) WorkerControlPoll(w http.ResponseWriter, r *http.Request) {
+	wrk, err := s.authenticateWorkerRequest(r)
+	if err != nil {
+		writeError(w, 401, "UNAUTHORIZED", "Invalid worker credential", "")
+		return
+	}
+
+	var req struct {
+		ActiveTasks []string `json:"active_tasks"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "VALIDATION_ERROR", "Invalid request", "")
+		return
+	}
+
+	commands := make([]map[string]any, 0)
+	if len(req.ActiveTasks) > 0 {
+		runRows, err := s.pool.Query(r.Context(), `
+			SELECT id FROM runs
+			WHERE worker_id = $1
+			  AND state = 'kill_requested'
+			  AND id = ANY($2::text[])
+		`, wrk.ID, req.ActiveTasks)
+		if err != nil {
+			writeError(w, 500, "INTERNAL_ERROR", "Failed to load control commands", err.Error())
+			return
+		}
+		defer runRows.Close()
+
+		for runRows.Next() {
+			var taskID string
+			if err := runRows.Scan(&taskID); err != nil {
+				continue
+			}
+			commands = append(commands, map[string]any{
+				"task_id": taskID,
+				"action":  "kill",
+			})
+		}
+
+		jobRows, err := s.pool.Query(r.Context(), `
+			SELECT id FROM jobs
+			WHERE worker_id = $1
+			  AND state = 'kill_requested'
+			  AND id = ANY($2::text[])
+		`, wrk.ID, req.ActiveTasks)
+		if err != nil {
+			writeError(w, 500, "INTERNAL_ERROR", "Failed to load control commands", err.Error())
+			return
+		}
+		defer jobRows.Close()
+
+		for jobRows.Next() {
+			var taskID string
+			if err := jobRows.Scan(&taskID); err != nil {
+				continue
+			}
+			commands = append(commands, map[string]any{
+				"task_id": taskID,
+				"action":  "kill",
+			})
+		}
+	}
+
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"commands": commands}})
+}
+
+func (s *Service) authenticateWorkerRequest(r *http.Request) (db.Worker, error) {
+	authz := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authz, "Bearer ") {
+		return db.Worker{}, pgx.ErrNoRows
+	}
+	credential := strings.TrimSpace(strings.TrimPrefix(authz, "Bearer "))
+	if credential == "" {
+		return db.Worker{}, pgx.ErrNoRows
+	}
+
+	hash := hashSHA256(credential)
+	row := s.pool.QueryRow(r.Context(), `
+		SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency,
+		       version, enabled, status, last_heartbeat_at, consecutive_failures,
+		       consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at,
+		       created_at, updated_at
+		FROM workers
+		WHERE credential_hash = $1
+		  AND enabled = true
+	`, hash)
+
+	var wrk db.Worker
+	err := row.Scan(
+		&wrk.ID,
+		&wrk.WorkspaceID,
+		&wrk.Name,
+		&wrk.CredentialHash,
+		&wrk.Labels,
+		&wrk.Capabilities,
+		&wrk.MaxConcurrency,
+		&wrk.Version,
+		&wrk.Enabled,
+		&wrk.Status,
+		&wrk.LastHeartbeatAt,
+		&wrk.ConsecutiveFailures,
+		&wrk.ConsecutiveHealthy,
+		&wrk.EnrollmentTokenHash,
+		&wrk.EnrollmentTokenExpiresAt,
+		&wrk.CreatedAt,
+		&wrk.UpdatedAt,
+	)
+	return wrk, err
 }
 
 // ============================================================================
@@ -1569,14 +2025,14 @@ func (s *Service) TriggerCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run cleanup in background
-	go func() {
-		slog.Info("manual cleanup triggered")
-		// The cleanup package handles retention-based deletion
-		// This just triggers it immediately instead of waiting for the scheduled run
-	}()
-
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "cleanup_triggered"}})
+	// TODO: Wire cleanup component to handler so manual trigger can invoke it.
+	// Currently cleanup runs on its own schedule and is not exposed to the handler layer.
+	writeJSON(w, 501, map[string]any{
+		"error": map[string]any{
+			"code":    "NOT_IMPLEMENTED",
+			"message": "Cleanup runs on schedule; manual trigger is not yet implemented",
+		},
+	})
 }
 
 // ============================================================================
@@ -1895,7 +2351,7 @@ func (s *Service) CreateOrchestra(w http.ResponseWriter, r *http.Request) {
 	orch, err := s.queries.CreateOrchestra(r.Context(), db.CreateOrchestraParams{
 		ID: id.New("orc_"), WorkspaceID: wsID, Name: req.Name,
 		DirectorType: req.DirectorType, DirectorProcessID: req.DirectorProcID,
-		AIConfig: aiJSON, Secrets: req.Secrets,
+		AiConfig: aiJSON, Secrets: req.Secrets,
 	})
 	if err != nil {
 		writeError(w, 500, "INTERNAL_ERROR", "Failed to create orchestra", err.Error())
@@ -1917,7 +2373,7 @@ func (s *Service) CreateOrchestra(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) ListOrchestras(w http.ResponseWriter, r *http.Request) {
 	wsID := auth.WorkspaceID(r.Context())
-	orchs, err := s.queries.ListOrchestrasByWorkspace(r.Context(), db.ListOrchestrasParams{WorkspaceID: wsID, Limit: 50, Offset: 0})
+	orchs, err := s.queries.ListOrchestrasByWorkspace(r.Context(), db.ListOrchestrasByWorkspaceParams{WorkspaceID: wsID, Limit: 50, Offset: 0})
 	if err != nil {
 		writeError(w, 500, "INTERNAL_ERROR", "Failed to list orchestras", "")
 		return
@@ -1944,19 +2400,19 @@ func (s *Service) GetOrchestraScore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "NOT_FOUND", "Orchestra not found", "")
 		return
 	}
-	movements, _ := s.queries.ListMovementsByOrchestra(r.Context(), orchID)
+	movements, _ := s.queries.ListMovementsByOrchestra(r.Context(), &orchID)
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"orchestra": orch, "movements": movements}})
 }
 
 func (s *Service) CancelOrchestra(w http.ResponseWriter, r *http.Request) {
 	orchID := chi.URLParam(r, "id")
-	s.queries.UpdateOrchestraState(r.Context(), orchID, "cancelled")
+	s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: orchID, State: "cancelled"})
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "cancelled"}})
 }
 
 func (s *Service) PauseOrchestra(w http.ResponseWriter, r *http.Request) {
 	orchID := chi.URLParam(r, "id")
-	s.queries.UpdateOrchestraState(r.Context(), orchID, "paused")
+	s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: orchID, State: "paused"})
 	// Post chat message
 	actor, _ := auth.GetActor(r.Context())
 	s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
@@ -1968,7 +2424,7 @@ func (s *Service) PauseOrchestra(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) ResumeOrchestra(w http.ResponseWriter, r *http.Request) {
 	orchID := chi.URLParam(r, "id")
-	s.queries.UpdateOrchestraState(r.Context(), orchID, "active")
+	s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: orchID, State: "active"})
 	actor, _ := auth.GetActor(r.Context())
 	s.queries.CreateChatMessage(r.Context(), db.CreateChatMessageParams{
 		ID: id.New("msg_"), OrchestraID: orchID, SenderType: "system",
@@ -1981,7 +2437,7 @@ func (s *Service) FinishOrchestraHandler(w http.ResponseWriter, r *http.Request)
 	orchID := chi.URLParam(r, "id")
 	var req struct{ Summary string `json:"summary"` }
 	json.NewDecoder(r.Body).Decode(&req)
-	s.queries.FinishOrchestra(r.Context(), orchID, &req.Summary)
+	s.queries.FinishOrchestra(r.Context(), db.FinishOrchestraParams{ID: orchID, Summary: &req.Summary})
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "completed"}})
 }
 
@@ -2035,10 +2491,10 @@ func (s *Service) SetChoiceConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "VALIDATION_ERROR", "Invalid JSON", "")
 		return
 	}
-	s.queries.SetRunChoiceConfig(r.Context(), runID, body)
+	s.queries.SetRunChoiceConfig(r.Context(), db.SetRunChoiceConfigParams{ID: runID, ChoiceConfig: body})
 	run, _ := s.queries.GetRun(r.Context(), db.GetRunParams{ID: runID, WorkspaceID: wsID})
 	if run.OrchestraID != nil {
-		s.queries.UpdateOrchestraState(r.Context(), *run.OrchestraID, "waiting_for_choice")
+		s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: *run.OrchestraID, State: "waiting_for_choice"})
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "waiting_for_choice"}})
 }
@@ -2062,7 +2518,7 @@ func (s *Service) Choose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "VALIDATION_ERROR", "Invalid choice index", "")
 		return
 	}
-	s.queries.SetRunChosenIndex(r.Context(), runID, req.ChoiceIndex)
+	s.queries.SetRunChosenIndex(r.Context(), db.SetRunChosenIndexParams{ID: runID, ChosenIndex: &req.ChoiceIndex})
 	choice := config.Choices[req.ChoiceIndex]
 	if choice.ProcessID != nil && *choice.ProcessID != "" {
 		actor, _ := auth.GetActor(r.Context())
@@ -2072,7 +2528,7 @@ func (s *Service) Choose(w http.ResponseWriter, r *http.Request) {
 			orchestraID = *run.OrchestraID
 			if run.OrchestraStep != nil { step = *run.OrchestraStep + 1 }
 			s.queries.IncrementMovementCount(r.Context(), orchestraID)
-			s.queries.UpdateOrchestraState(r.Context(), orchestraID, "active")
+			s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: orchestraID, State: "active"})
 		}
 		newRun, _ := s.queries.CreateRun(r.Context(), db.CreateRunParams{
 			ID: id.NewRun(), WorkspaceID: wsID, ProcessID: *choice.ProcessID,
@@ -2087,7 +2543,7 @@ func (s *Service) Choose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if run.OrchestraID != nil {
-		s.queries.UpdateOrchestraState(r.Context(), *run.OrchestraID, "completed")
+		s.queries.UpdateOrchestraState(r.Context(), db.UpdateOrchestraStateParams{ID: *run.OrchestraID, State: "completed"})
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"status": "completed"}})
 }
@@ -2139,7 +2595,11 @@ func (s *Service) PostChatMessage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) ListChatMessages(w http.ResponseWriter, r *http.Request) {
 	orchID := chi.URLParam(r, "id")
-	messages, err := s.queries.ListChatMessagesAll(r.Context(), orchID, 200, 0)
+	messages, err := s.queries.ListChatMessagesAll(r.Context(), db.ListChatMessagesAllParams{
+		OrchestraID: orchID,
+		Limit:       200,
+		Offset:      0,
+	})
 	if err != nil {
 		writeError(w, 500, "INTERNAL_ERROR", "Failed to list messages", "")
 		return
@@ -2173,7 +2633,11 @@ func (s *Service) StreamChat(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			messages, err := s.queries.ListChatMessages(r.Context(), orchID, lastCheck, 50)
+			messages, err := s.queries.ListChatMessages(r.Context(), db.ListChatMessagesParams{
+				OrchestraID: orchID,
+				CreatedAt:   dbutil.Timestamptz(lastCheck),
+				Limit:       50,
+			})
 			if err != nil {
 				continue
 			}
@@ -2212,7 +2676,7 @@ func (s *Service) SetRunResult(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "VALIDATION_ERROR", "Body must be valid JSON", "")
 		return
 	}
-	if err := s.queries.SetRunResult(r.Context(), runID, body); err != nil {
+	if err := s.queries.SetRunResult(r.Context(), db.SetRunResultParams{ID: runID, Result: body}); err != nil {
 		writeError(w, 500, "INTERNAL_ERROR", "Failed to set result", "")
 		return
 	}
@@ -2296,7 +2760,11 @@ func (s *Service) UpdateSecretHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.queries.UpdateSecret(r.Context(), wsID, name, encrypted); err != nil {
+	if err := s.queries.UpdateSecret(r.Context(), db.UpdateSecretParams{
+		WorkspaceID: wsID,
+		Name:        name,
+		ValueEnc:    encrypted,
+	}); err != nil {
 		writeError(w, 404, "NOT_FOUND", "Secret not found", "")
 		return
 	}
@@ -2394,7 +2862,7 @@ func (s *Service) DownloadArtifact(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	name := chi.URLParam(r, "name")
 
-	artifact, err := s.queries.GetArtifact(r.Context(), runID, name)
+	artifact, err := s.queries.GetArtifact(r.Context(), db.GetArtifactParams{RunID: runID, Name: name})
 	if err != nil {
 		writeError(w, 404, "NOT_FOUND", "Artifact not found", "")
 		return
@@ -2772,6 +3240,72 @@ func getStr(m map[string]any, key, def string) string {
 func getStrPtr(m map[string]any, key string, def *string) *string {
 	if v, ok := m[key].(string); ok {
 		return &v
+	}
+	return def
+}
+
+func getNullableString(m map[string]any, key string, def *string) *string {
+	v, exists := m[key]
+	if !exists {
+		return def
+	}
+	if v == nil {
+		return nil
+	}
+	if s, ok := v.(string); ok {
+		return &s
+	}
+	return def
+}
+
+func getJSONBytes(m map[string]any, key string, def []byte) []byte {
+	v, exists := m[key]
+	if !exists {
+		return def
+	}
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+func getStringArray(m map[string]any, key string, def []string) []string {
+	v, exists := m[key]
+	if !exists {
+		return def
+	}
+	if v == nil {
+		return nil
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return def
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return def
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func getInt32(m map[string]any, key string, def int32) int32 {
+	if v, ok := m[key].(float64); ok {
+		return int32(v)
+	}
+	return def
+}
+
+func getBool(m map[string]any, key string, def bool) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
 	}
 	return def
 }

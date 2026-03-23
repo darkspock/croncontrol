@@ -58,6 +58,7 @@ export const api = {
   listQueues: () => request<{ data: any[]; meta: any }>('/queues'),
   getQueue: (id: string) => request<{ data: any }>(`/queues/${id}`),
   createQueue: (data: any) => request<{ data: any }>('/queues', { method: 'POST', body: JSON.stringify(data) }),
+  updateQueue: (id: string, data: any) => request<{ data: any }>(`/queues/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Jobs
   listJobs: (params?: string) => request<{ data: any[]; meta: any }>(`/jobs${params ? `?${params}` : ''}`),
@@ -70,6 +71,8 @@ export const api = {
   // Workers
   listWorkers: () => request<{ data: any[]; meta: any }>('/workers'),
   createWorker: (data: any) => request<{ data: any }>('/workers', { method: 'POST', body: JSON.stringify(data) }),
+  getWorker: (id: string) => request<{ data: any }>(`/workers/${id}`),
+  updateWorker: (id: string, data: any) => request<{ data: any }>(`/workers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteWorker: (id: string) => request(`/workers/${id}`, { method: 'DELETE' }),
 
   // API Keys

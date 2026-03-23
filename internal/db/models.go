@@ -75,6 +75,9 @@ type Job struct {
 	DurationMs           *int64             `json:"duration_ms"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ExecutionHandle      []byte             `json:"execution_handle"`
+	StdoutOffset         int64              `json:"stdout_offset"`
+	StderrOffset         int64              `json:"stderr_offset"`
 }
 
 type JobAttempt struct {
@@ -103,6 +106,36 @@ type K8sCluster struct {
 	DefaultNamespace *string            `json:"default_namespace"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Orchestra struct {
+	ID                string             `json:"id"`
+	WorkspaceID       string             `json:"workspace_id"`
+	Name              string             `json:"name"`
+	DirectorType      string             `json:"director_type"`
+	DirectorProcessID *string            `json:"director_process_id"`
+	AiConfig          []byte             `json:"ai_config"`
+	State             string             `json:"state"`
+	MovementCount     int32              `json:"movement_count"`
+	Secrets           []string           `json:"secrets"`
+	Summary           *string            `json:"summary"`
+	Budget            []byte             `json:"budget"`
+	BudgetUsed        []byte             `json:"budget_used"`
+	Timeout           pgtype.Interval    `json:"timeout"`
+	TimeoutAt         pgtype.Timestamptz `json:"timeout_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type OrchestraChat struct {
+	ID          string             `json:"id"`
+	OrchestraID string             `json:"orchestra_id"`
+	SenderType  string             `json:"sender_type"`
+	SenderID    *string            `json:"sender_id"`
+	MessageType string             `json:"message_type"`
+	Content     string             `json:"content"`
+	Data        []byte             `json:"data"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type Process struct {
@@ -194,13 +227,27 @@ type Run struct {
 	Runtime           *string            `json:"runtime"`
 	WorkerID          *string            `json:"worker_id"`
 	Tags              []string           `json:"tags"`
-	OrchestraID       *string            `json:"orchestra_id"`
-	OrchestraStep     *int32             `json:"orchestra_step"`
-	Result            []byte             `json:"result,omitempty"`
-	ChoiceConfig      []byte             `json:"choice_config,omitempty"`
-	ChosenIndex       *int32             `json:"chosen_index"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Result            []byte             `json:"result"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	ChoiceConfig      []byte             `json:"choice_config"`
+	ChosenIndex       *int32             `json:"chosen_index"`
+	ExecutionHandle   []byte             `json:"execution_handle"`
+	StdoutOffset      int64              `json:"stdout_offset"`
+	StderrOffset      int64              `json:"stderr_offset"`
+}
+
+type RunArtifact struct {
+	ID          string             `json:"id"`
+	RunID       string             `json:"run_id"`
+	WorkspaceID string             `json:"workspace_id"`
+	Name        string             `json:"name"`
+	ContentType *string            `json:"content_type"`
+	SizeBytes   *int64             `json:"size_bytes"`
+	StorageKey  string             `json:"storage_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type RunAttempt struct {
@@ -255,11 +302,21 @@ type User struct {
 	AuthProvider      string             `json:"auth_provider"`
 	PasswordHash      *string            `json:"password_hash"`
 	EmailVerified     bool               `json:"email_verified"`
-	IsPlatformAdmin   bool               `json:"is_platform_admin"`
 	ActiveWorkspaceID *string            `json:"active_workspace_id"`
 	LastLoginAt       pgtype.Timestamptz `json:"last_login_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	IsPlatformAdmin   bool               `json:"is_platform_admin"`
+}
+
+type UserToken struct {
+	ID        string             `json:"id"`
+	UserID    string             `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	TokenType string             `json:"token_type"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type WebhookSubscription struct {
@@ -291,10 +348,10 @@ type Worker struct {
 	LastHeartbeatAt          pgtype.Timestamptz `json:"last_heartbeat_at"`
 	ConsecutiveFailures      int32              `json:"consecutive_failures"`
 	ConsecutiveHealthy       int32              `json:"consecutive_healthy"`
-	EnrollmentTokenHash      *string            `json:"enrollment_token_hash"`
-	EnrollmentTokenExpiresAt pgtype.Timestamptz `json:"enrollment_token_expires_at"`
 	CreatedAt                pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	EnrollmentTokenHash      *string            `json:"enrollment_token_hash"`
+	EnrollmentTokenExpiresAt pgtype.Timestamptz `json:"enrollment_token_expires_at"`
 }
 
 type Workspace struct {
@@ -314,4 +371,31 @@ type WorkspaceMembership struct {
 	Role        string             `json:"role"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceSecret struct {
+	ID          string             `json:"id"`
+	WorkspaceID string             `json:"workspace_id"`
+	Name        string             `json:"name"`
+	ValueEnc    []byte             `json:"value_enc"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceServer struct {
+	ID                string             `json:"id"`
+	WorkspaceID       string             `json:"workspace_id"`
+	HetznerID         int64              `json:"hetzner_id"`
+	Name              string             `json:"name"`
+	IpAddress         *string            `json:"ip_address"`
+	State             string             `json:"state"`
+	ServerType        string             `json:"server_type"`
+	Datacenter        string             `json:"datacenter"`
+	ContainersRunning int32              `json:"containers_running"`
+	MaxContainers     int32              `json:"max_containers"`
+	LastActivityAt    pgtype.Timestamptz `json:"last_activity_at"`
+	MonthlyCost       pgtype.Numeric     `json:"monthly_cost"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	DestroyedAt       pgtype.Timestamptz `json:"destroyed_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }

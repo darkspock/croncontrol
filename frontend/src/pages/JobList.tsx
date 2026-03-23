@@ -32,10 +32,13 @@ export function JobList() {
         >
           <option value="">All</option>
           <option value="pending">Pending</option>
+          <option value="waiting_for_worker">Waiting for worker</option>
           <option value="running">Running</option>
+          <option value="kill_requested">Kill requested</option>
           <option value="completed">Completed</option>
           <option value="failed">Failed</option>
           <option value="retrying">Retrying</option>
+          <option value="killed">Killed</option>
           <option value="cancelled">Cancelled</option>
         </select>
       </div>

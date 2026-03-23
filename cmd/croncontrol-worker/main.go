@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,15 +36,17 @@ var (
 )
 
 type Config struct {
-	ControlPlaneURL string
-	Credential      string
-	PollTimeout     time.Duration
-	HeartbeatEvery  time.Duration
+	ControlPlaneURL  string
+	Credential       string
+	PollTimeout      time.Duration
+	HeartbeatEvery   time.Duration
+	ControlPollEvery time.Duration
 }
 
 type Task struct {
 	ID              string         `json:"id"`
 	Type            string         `json:"type"`
+	AttemptID       string         `json:"attempt_id,omitempty"`
 	WorkspaceID     string         `json:"workspace_id"`
 	ExecutionMethod string         `json:"execution_method"`
 	MethodConfig    map[string]any `json:"method_config"`
@@ -53,6 +56,7 @@ type Task struct {
 
 type TaskResult struct {
 	TaskID       string `json:"task_id"`
+	AttemptID    string `json:"attempt_id,omitempty"`
 	ExitCode     *int   `json:"exit_code,omitempty"`
 	ResponseCode *int   `json:"response_code,omitempty"`
 	Stdout       string `json:"stdout,omitempty"`
@@ -60,6 +64,17 @@ type TaskResult struct {
 	ResponseBody string `json:"response_body,omitempty"`
 	DurationMs   int64  `json:"duration_ms"`
 	Error        string `json:"error,omitempty"`
+}
+
+type controlCommand struct {
+	TaskID string `json:"task_id"`
+	Action string `json:"action"`
+}
+
+type activeTask struct {
+	cancel context.CancelFunc
+	method executor.Method
+	handle executor.Handle
 }
 
 func main() {
@@ -71,8 +86,9 @@ func main() {
 
 func run() error {
 	cfg := Config{
-		PollTimeout:    30 * time.Second,
-		HeartbeatEvery: 15 * time.Second,
+		PollTimeout:      30 * time.Second,
+		HeartbeatEvery:   15 * time.Second,
+		ControlPollEvery: 5 * time.Second,
 	}
 
 	flag.StringVar(&cfg.ControlPlaneURL, "url", os.Getenv("CRONCONTROL_URL"), "Control plane URL")
@@ -103,8 +119,11 @@ func run() error {
 	registry := buildMethodRegistry()
 	slog.Info("execution methods registered", "methods", []string{"http", "ssh"})
 
+	var activeTasks sync.Map
+
 	// Start heartbeat loop
 	go heartbeatLoop(ctx, client, cfg)
+	go controlPollLoop(ctx, client, cfg, &activeTasks)
 
 	// Main poll loop
 	for {
@@ -125,13 +144,12 @@ func run() error {
 
 			slog.Info("received task", "id", task.ID, "method", task.ExecutionMethod)
 
-			// Execute task using the method registry
-			result := executeTask(ctx, task, registry)
-
-			// Report result
-			if err := reportResult(ctx, client, cfg, result); err != nil {
-				slog.Error("report result failed", "error", err)
-			}
+			go func(task *Task) {
+				result := executeTask(ctx, task, registry, &activeTasks)
+				if err := reportResult(ctx, client, cfg, result); err != nil {
+					slog.Error("report result failed", "error", err)
+				}
+			}(task)
 		}
 	}
 }
@@ -180,7 +198,7 @@ func buildMethodRegistry() *executor.Registry {
 	// SSH method — available when credentials are provided via method_config.
 	// On the worker side, SSH credentials come inline in the task's method_config
 	// (private_key, username, port) rather than via DB credential loader.
-	reg.Register("ssh", execssh.New(workerSSHCredentialLoader))
+	reg.RegisterBlocking("ssh", execssh.New(workerSSHCredentialLoader))
 
 	return reg
 }
@@ -193,7 +211,7 @@ func workerSSHCredentialLoader(_ context.Context, _ string) ([]byte, string, int
 	return nil, "", 0, true, fmt.Errorf("ssh credentials must be provided in method_config for worker execution")
 }
 
-func executeTask(ctx context.Context, task *Task, registry *executor.Registry) TaskResult {
+func executeTask(ctx context.Context, task *Task, registry *executor.Registry, activeTasks *sync.Map) TaskResult {
 	start := time.Now()
 
 	slog.Info("executing task", "id", task.ID, "method", task.ExecutionMethod)
@@ -221,7 +239,7 @@ func executeTask(ctx context.Context, task *Task, registry *executor.Registry) T
 		env["CRONCONTROL_API_URL"] = task.APIBaseURL
 	}
 
-	params := executor.ExecuteParams{
+	params := executor.StartParams{
 		RunID:        task.ID,
 		WorkspaceID:  task.WorkspaceID,
 		MethodConfig: task.MethodConfig,
@@ -229,11 +247,34 @@ func executeTask(ctx context.Context, task *Task, registry *executor.Registry) T
 		APIBaseURL:   task.APIBaseURL,
 	}
 
-	result, err := method.Execute(ctx, params)
+	execCtx, cancel := context.WithCancel(ctx)
+	handle := executor.Handle{MethodName: task.ExecutionMethod, RunID: task.ID, Data: make(map[string]any)}
+	activeTasks.Store(task.ID, &activeTask{cancel: cancel, method: method, handle: handle})
+	defer func() {
+		cancel()
+		activeTasks.Delete(task.ID)
+	}()
+
+	startResult, err := method.Start(execCtx, params)
+	if startResult.Handle.MethodName != "" {
+		handle = startResult.Handle
+		activeTasks.Store(task.ID, &activeTask{cancel: cancel, method: method, handle: handle})
+	}
+	if startResult.Result == nil {
+		durationMs := time.Since(start).Milliseconds()
+		return TaskResult{
+			TaskID:     task.ID,
+			AttemptID:  task.AttemptID,
+			DurationMs: durationMs,
+			Error:      "async worker executions are not implemented yet",
+		}
+	}
+	result := *startResult.Result
 	durationMs := time.Since(start).Milliseconds()
 
 	tr := TaskResult{
 		TaskID:       task.ID,
+		AttemptID:    task.AttemptID,
 		ExitCode:     result.ExitCode,
 		ResponseCode: result.ResponseCode,
 		Stdout:       result.Stdout,
@@ -256,6 +297,79 @@ func executeTask(ctx context.Context, task *Task, registry *executor.Registry) T
 	)
 
 	return tr
+}
+
+func controlPollLoop(ctx context.Context, client *http.Client, cfg Config, activeTasks *sync.Map) {
+	ticker := time.NewTicker(cfg.ControlPollEvery)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			sendControlPoll(ctx, client, cfg, activeTasks)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func sendControlPoll(ctx context.Context, client *http.Client, cfg Config, activeTasks *sync.Map) {
+	activeIDs := make([]string, 0)
+	activeTasks.Range(func(key, value any) bool {
+		if id, ok := key.(string); ok {
+			activeIDs = append(activeIDs, id)
+		}
+		return true
+	})
+
+	body, _ := json.Marshal(map[string]any{"active_tasks": activeIDs})
+	req, err := http.NewRequestWithContext(ctx, "POST", cfg.ControlPlaneURL+"/api/v1/workers/control-poll", bytes.NewReader(body))
+	if err != nil {
+		slog.Error("control poll: create request", "error", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.Credential)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("control poll failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var payload struct {
+		Data struct {
+			Commands []controlCommand `json:"commands"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		slog.Error("control poll decode failed", "error", err)
+		return
+	}
+
+	for _, cmd := range payload.Data.Commands {
+		if cmd.Action != "kill" {
+			continue
+		}
+		val, ok := activeTasks.Load(cmd.TaskID)
+		if !ok {
+			continue
+		}
+		task := val.(*activeTask)
+		task.cancel()
+		if task.method.SupportsKill() {
+			killCtx, killCancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := task.method.Kill(killCtx, task.handle); err != nil {
+				slog.Warn("worker kill failed", "task", cmd.TaskID, "error", err)
+			}
+			killCancel()
+		}
+	}
 }
 
 func reportResult(ctx context.Context, client *http.Client, cfg Config, result TaskResult) error {

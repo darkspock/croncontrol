@@ -81,7 +81,7 @@ func (m *Monitor) checkTimeouts(ctx context.Context) {
 		slog.Warn("orchestra: timeout", "orchestra", name, "id", orchID)
 
 		// Fail the orchestra
-		m.queries.UpdateOrchestraState(ctx, orchID, "failed")
+		m.queries.UpdateOrchestraState(ctx, db.UpdateOrchestraStateParams{ID: orchID, State: "failed"})
 
 		// Kill running movements
 		m.pool.Exec(ctx,
@@ -132,7 +132,7 @@ func (m *Monitor) checkBudgets(ctx context.Context) {
 		}
 
 		if exceeded {
-			m.queries.UpdateOrchestraState(ctx, orchID, "failed")
+			m.queries.UpdateOrchestraState(ctx, db.UpdateOrchestraStateParams{ID: orchID, State: "failed"})
 			m.pool.Exec(ctx,
 				`UPDATE runs SET state = 'killed', updated_at = now()
 				 WHERE orchestra_id = $1 AND state IN ('running', 'pending', 'queued')`, orchID)

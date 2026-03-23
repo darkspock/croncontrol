@@ -19,7 +19,7 @@ export function StateBadge({ state, className }: StateBadgeProps) {
       <span className={cn(
         'w-1.5 h-1.5 rounded-full',
         colors.dot,
-        state === 'running' && 'animate-pulse-dot'
+        (state === 'running' || state === 'kill_requested') && 'animate-pulse-dot'
       )} />
       {state.replace(/_/g, ' ')}
     </span>

@@ -6,12 +6,14 @@ import { formatTimeAgo } from '@/lib/utils'
 import { useState } from 'react'
 
 export function RunsUpcoming() {
-  const { data, isLoading, refetch } = useRuns('state=pending&state=queued')
+  const { data, isLoading, refetch } = useRuns()
   const [cancelling, setCancelling] = useState<string | null>(null)
 
-  const runs = (data?.data || []).sort((a: any, b: any) =>
-    new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-  )
+  const runs = (data?.data || [])
+    .filter((run: any) => run.state === 'pending' || run.state === 'queued')
+    .sort((a: any, b: any) =>
+      new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    )
 
   const handleCancel = async (runId: string) => {
     setCancelling(runId)

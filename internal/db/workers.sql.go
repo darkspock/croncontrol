@@ -11,10 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countRunningByWorker = `-- name: CountRunningByWorker :one
+SELECT count(*) FROM runs WHERE worker_id = $1 AND state = 'running'
+`
+
+func (q *Queries) CountRunningByWorker(ctx context.Context, workerID *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countRunningByWorker, workerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createWorker = `-- name: CreateWorker :one
 INSERT INTO workers (id, workspace_id, name, credential_hash, labels, max_concurrency)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at, created_at, updated_at
+RETURNING id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, created_at, updated_at, enrollment_token_hash, enrollment_token_expires_at
 `
 
 type CreateWorkerParams struct {
@@ -50,10 +61,10 @@ func (q *Queries) CreateWorker(ctx context.Context, arg CreateWorkerParams) (Wor
 		&i.LastHeartbeatAt,
 		&i.ConsecutiveFailures,
 		&i.ConsecutiveHealthy,
-		&i.EnrollmentTokenHash,
-		&i.EnrollmentTokenExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentTokenHash,
+		&i.EnrollmentTokenExpiresAt,
 	)
 	return i, err
 }
@@ -76,7 +87,7 @@ func (q *Queries) DeleteWorker(ctx context.Context, arg DeleteWorkerParams) (int
 }
 
 const getWorker = `-- name: GetWorker :one
-SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at, created_at, updated_at FROM workers WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, created_at, updated_at, enrollment_token_hash, enrollment_token_expires_at FROM workers WHERE id = $1 AND workspace_id = $2
 `
 
 type GetWorkerParams struct {
@@ -101,10 +112,41 @@ func (q *Queries) GetWorker(ctx context.Context, arg GetWorkerParams) (Worker, e
 		&i.LastHeartbeatAt,
 		&i.ConsecutiveFailures,
 		&i.ConsecutiveHealthy,
-		&i.EnrollmentTokenHash,
-		&i.EnrollmentTokenExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentTokenHash,
+		&i.EnrollmentTokenExpiresAt,
+	)
+	return i, err
+}
+
+const getWorkerByEnrollmentToken = `-- name: GetWorkerByEnrollmentToken :one
+SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, created_at, updated_at, enrollment_token_hash, enrollment_token_expires_at FROM workers
+WHERE enrollment_token_hash = $1
+  AND enrollment_token_expires_at > now()
+`
+
+func (q *Queries) GetWorkerByEnrollmentToken(ctx context.Context, enrollmentTokenHash *string) (Worker, error) {
+	row := q.db.QueryRow(ctx, getWorkerByEnrollmentToken, enrollmentTokenHash)
+	var i Worker
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.CredentialHash,
+		&i.Labels,
+		&i.Capabilities,
+		&i.MaxConcurrency,
+		&i.Version,
+		&i.Enabled,
+		&i.Status,
+		&i.LastHeartbeatAt,
+		&i.ConsecutiveFailures,
+		&i.ConsecutiveHealthy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.EnrollmentTokenHash,
+		&i.EnrollmentTokenExpiresAt,
 	)
 	return i, err
 }
@@ -123,7 +165,7 @@ func (q *Queries) IncrementWorkerFailures(ctx context.Context, id string) error 
 }
 
 const listOnlineWorkers = `-- name: ListOnlineWorkers :many
-SELECT w.id, w.workspace_id, w.name, w.credential_hash, w.labels, w.capabilities, w.max_concurrency, w.version, w.enabled, w.status, w.last_heartbeat_at, w.consecutive_failures, w.consecutive_healthy, w.enrollment_token_hash, w.enrollment_token_expires_at, w.created_at, w.updated_at FROM workers w
+SELECT w.id, w.workspace_id, w.name, w.credential_hash, w.labels, w.capabilities, w.max_concurrency, w.version, w.enabled, w.status, w.last_heartbeat_at, w.consecutive_failures, w.consecutive_healthy, w.created_at, w.updated_at, w.enrollment_token_hash, w.enrollment_token_expires_at FROM workers w
 WHERE w.workspace_id = $1
   AND w.enabled = true
   AND w.status = 'online'
@@ -161,6 +203,8 @@ func (q *Queries) ListOnlineWorkers(ctx context.Context, arg ListOnlineWorkersPa
 			&i.ConsecutiveHealthy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnrollmentTokenHash,
+			&i.EnrollmentTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -173,7 +217,7 @@ func (q *Queries) ListOnlineWorkers(ctx context.Context, arg ListOnlineWorkersPa
 }
 
 const listStaleWorkers = `-- name: ListStaleWorkers :many
-SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at, created_at, updated_at FROM workers
+SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, created_at, updated_at, enrollment_token_hash, enrollment_token_expires_at FROM workers
 WHERE enabled = true
   AND status = 'online'
   AND last_heartbeat_at < now() - interval '60 seconds'
@@ -204,6 +248,8 @@ func (q *Queries) ListStaleWorkers(ctx context.Context) ([]Worker, error) {
 			&i.ConsecutiveHealthy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnrollmentTokenHash,
+			&i.EnrollmentTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +262,7 @@ func (q *Queries) ListStaleWorkers(ctx context.Context) ([]Worker, error) {
 }
 
 const listWorkersByWorkspace = `-- name: ListWorkersByWorkspace :many
-SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at, created_at, updated_at FROM workers WHERE workspace_id = $1 ORDER BY name
+SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, created_at, updated_at, enrollment_token_hash, enrollment_token_expires_at FROM workers WHERE workspace_id = $1 ORDER BY name
 `
 
 func (q *Queries) ListWorkersByWorkspace(ctx context.Context, workspaceID string) ([]Worker, error) {
@@ -244,6 +290,8 @@ func (q *Queries) ListWorkersByWorkspace(ctx context.Context, workspaceID string
 			&i.ConsecutiveHealthy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnrollmentTokenHash,
+			&i.EnrollmentTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -271,6 +319,25 @@ func (q *Queries) SetWorkerEnabled(ctx context.Context, arg SetWorkerEnabledPara
 	return err
 }
 
+const setWorkerEnrollmentToken = `-- name: SetWorkerEnrollmentToken :exec
+UPDATE workers SET
+    enrollment_token_hash = $2,
+    enrollment_token_expires_at = $3,
+    updated_at = now()
+WHERE id = $1
+`
+
+type SetWorkerEnrollmentTokenParams struct {
+	ID                       string             `json:"id"`
+	EnrollmentTokenHash      *string            `json:"enrollment_token_hash"`
+	EnrollmentTokenExpiresAt pgtype.Timestamptz `json:"enrollment_token_expires_at"`
+}
+
+func (q *Queries) SetWorkerEnrollmentToken(ctx context.Context, arg SetWorkerEnrollmentTokenParams) error {
+	_, err := q.db.Exec(ctx, setWorkerEnrollmentToken, arg.ID, arg.EnrollmentTokenHash, arg.EnrollmentTokenExpiresAt)
+	return err
+}
+
 const setWorkerStatus = `-- name: SetWorkerStatus :exec
 UPDATE workers SET status = $2, updated_at = now() WHERE id = $1
 `
@@ -282,6 +349,25 @@ type SetWorkerStatusParams struct {
 
 func (q *Queries) SetWorkerStatus(ctx context.Context, arg SetWorkerStatusParams) error {
 	_, err := q.db.Exec(ctx, setWorkerStatus, arg.ID, arg.Status)
+	return err
+}
+
+const updateWorkerCredentialHash = `-- name: UpdateWorkerCredentialHash :exec
+UPDATE workers SET
+    credential_hash = $2,
+    enrollment_token_hash = NULL,
+    enrollment_token_expires_at = NULL,
+    updated_at = now()
+WHERE id = $1
+`
+
+type UpdateWorkerCredentialHashParams struct {
+	ID             string `json:"id"`
+	CredentialHash string `json:"credential_hash"`
+}
+
+func (q *Queries) UpdateWorkerCredentialHash(ctx context.Context, arg UpdateWorkerCredentialHashParams) error {
+	_, err := q.db.Exec(ctx, updateWorkerCredentialHash, arg.ID, arg.CredentialHash)
 	return err
 }
 
@@ -321,85 +407,5 @@ type UpdateWorkerLabelsParams struct {
 
 func (q *Queries) UpdateWorkerLabels(ctx context.Context, arg UpdateWorkerLabelsParams) error {
 	_, err := q.db.Exec(ctx, updateWorkerLabels, arg.ID, arg.WorkspaceID, arg.Labels)
-	return err
-}
-
-const countRunningByWorker = `-- name: CountRunningByWorker :one
-SELECT count(*) FROM runs WHERE worker_id = $1 AND state = 'running'
-`
-
-func (q *Queries) CountRunningByWorker(ctx context.Context, workerID string) (int64, error) {
-	row := q.db.QueryRow(ctx, countRunningByWorker, workerID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const setWorkerEnrollmentToken = `-- name: SetWorkerEnrollmentToken :exec
-UPDATE workers SET
-    enrollment_token_hash = $2,
-    enrollment_token_expires_at = $3,
-    updated_at = now()
-WHERE id = $1
-`
-
-type SetWorkerEnrollmentTokenParams struct {
-	ID                       string             `json:"id"`
-	EnrollmentTokenHash      *string            `json:"enrollment_token_hash"`
-	EnrollmentTokenExpiresAt pgtype.Timestamptz `json:"enrollment_token_expires_at"`
-}
-
-func (q *Queries) SetWorkerEnrollmentToken(ctx context.Context, arg SetWorkerEnrollmentTokenParams) error {
-	_, err := q.db.Exec(ctx, setWorkerEnrollmentToken, arg.ID, arg.EnrollmentTokenHash, arg.EnrollmentTokenExpiresAt)
-	return err
-}
-
-const getWorkerByEnrollmentToken = `-- name: GetWorkerByEnrollmentToken :one
-SELECT id, workspace_id, name, credential_hash, labels, capabilities, max_concurrency, version, enabled, status, last_heartbeat_at, consecutive_failures, consecutive_healthy, enrollment_token_hash, enrollment_token_expires_at, created_at, updated_at FROM workers
-WHERE enrollment_token_hash = $1
-  AND enrollment_token_expires_at > now()
-`
-
-func (q *Queries) GetWorkerByEnrollmentToken(ctx context.Context, tokenHash string) (Worker, error) {
-	row := q.db.QueryRow(ctx, getWorkerByEnrollmentToken, tokenHash)
-	var i Worker
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Name,
-		&i.CredentialHash,
-		&i.Labels,
-		&i.Capabilities,
-		&i.MaxConcurrency,
-		&i.Version,
-		&i.Enabled,
-		&i.Status,
-		&i.LastHeartbeatAt,
-		&i.ConsecutiveFailures,
-		&i.ConsecutiveHealthy,
-		&i.EnrollmentTokenHash,
-		&i.EnrollmentTokenExpiresAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateWorkerCredentialHash = `-- name: UpdateWorkerCredentialHash :exec
-UPDATE workers SET
-    credential_hash = $2,
-    enrollment_token_hash = NULL,
-    enrollment_token_expires_at = NULL,
-    updated_at = now()
-WHERE id = $1
-`
-
-type UpdateWorkerCredentialHashParams struct {
-	ID             string `json:"id"`
-	CredentialHash string `json:"credential_hash"`
-}
-
-func (q *Queries) UpdateWorkerCredentialHash(ctx context.Context, arg UpdateWorkerCredentialHashParams) error {
-	_, err := q.db.Exec(ctx, updateWorkerCredentialHash, arg.ID, arg.CredentialHash)
 	return err
 }

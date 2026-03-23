@@ -95,7 +95,7 @@ func (e *Enrollment) CreateWorker(ctx context.Context, workspaceID, name string,
 func (e *Enrollment) Enroll(ctx context.Context, token string) (*EnrollmentResult, error) {
 	// Look up the worker by the hashed token
 	tokenHash := hashCredential(token)
-	worker, err := e.queries.GetWorkerByEnrollmentToken(ctx, tokenHash)
+	worker, err := e.queries.GetWorkerByEnrollmentToken(ctx, &tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("invalid or expired enrollment token")
 	}

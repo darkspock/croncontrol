@@ -30,7 +30,7 @@ import (
 )
 
 // Compile-time contract.
-var _ executor.Method = (*Method)(nil)
+var _ executor.BlockingMethod = (*Method)(nil)
 
 // ServerPool manages workspace server capacity for container execution.
 // Implemented by infra.Provisioner; nil if auto-provisioning is disabled.
@@ -42,20 +42,20 @@ type ServerPool interface {
 
 // Config holds container executor settings.
 type Config struct {
-	SwarmEndpoint  string  // unix:///var/run/docker.sock or tcp://manager:2375
-	DefaultCPU     float64 // default CPU limit per container (e.g., 0.5)
-	DefaultMemory  int64   // default memory limit in bytes (e.g., 512MB)
-	Network        string  // overlay network name
-	PullTimeout    time.Duration
-	ExecTimeout    time.Duration
+	SwarmEndpoint string  // unix:///var/run/docker.sock or tcp://manager:2375
+	DefaultCPU    float64 // default CPU limit per container (e.g., 0.5)
+	DefaultMemory int64   // default memory limit in bytes (e.g., 512MB)
+	Network       string  // overlay network name
+	PullTimeout   time.Duration
+	ExecTimeout   time.Duration
 }
 
 // Method implements container execution via Docker Swarm.
 type Method struct {
-	client  *client.Client
-	config  Config
-	active  sync.Map // map[runID]string (service ID)
-	pool    ServerPool
+	client *client.Client
+	config Config
+	active sync.Map // map[runID]string (service ID)
+	pool   ServerPool
 }
 
 // New creates a new container execution method. pool may be nil if auto-provisioning is disabled.
@@ -251,7 +251,7 @@ func (m *Method) Kill(_ context.Context, handle executor.Handle) error {
 	return m.client.ServiceRemove(context.Background(), serviceID)
 }
 
-func (m *Method) SupportsKill() bool     { return true }
+func (m *Method) SupportsKill() bool      { return true }
 func (m *Method) SupportsHeartbeat() bool { return true }
 
 func (m *Method) waitForCompletion(ctx context.Context, serviceID string, timeout time.Duration) (executor.Result, error) {

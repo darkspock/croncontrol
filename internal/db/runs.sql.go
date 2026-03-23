@@ -66,7 +66,7 @@ func (q *Queries) BulkResumeRuns(ctx context.Context, arg BulkResumeRunsParams) 
 }
 
 const claimPendingRuns = `-- name: ClaimPendingRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset
 FROM runs r
 JOIN workspaces w ON w.id = r.workspace_id
 WHERE r.state IN ('pending', 'queued')
@@ -119,6 +119,14 @@ func (q *Queries) ClaimPendingRuns(ctx context.Context, limit int32) ([]Run, err
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 		); err != nil {
 			return nil, err
 		}
@@ -131,7 +139,7 @@ func (q *Queries) ClaimPendingRuns(ctx context.Context, limit int32) ([]Run, err
 }
 
 const claimRetryingRuns = `-- name: ClaimRetryingRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset
 FROM runs r
 JOIN workspaces w ON w.id = r.workspace_id
 WHERE r.state = 'retrying'
@@ -184,6 +192,14 @@ func (q *Queries) ClaimRetryingRuns(ctx context.Context, limit int32) ([]Run, er
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 		); err != nil {
 			return nil, err
 		}
@@ -193,6 +209,20 @@ func (q *Queries) ClaimRetryingRuns(ctx context.Context, limit int32) ([]Run, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const clearRunExecutionHandle = `-- name: ClearRunExecutionHandle :exec
+UPDATE runs SET
+    execution_handle = NULL,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) ClearRunExecutionHandle(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, clearRunExecutionHandle, id)
+	return err
 }
 
 const countActiveByProcess = `-- name: CountActiveByProcess :one
@@ -257,7 +287,7 @@ INSERT INTO runs (
     $10, $11,
     $12, $13, $14
 )
-RETURNING id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at
+RETURNING id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at, result, orchestra_id, orchestra_step, choice_config, chosen_index, execution_handle, stdout_offset, stderr_offset
 `
 
 type CreateRunParams struct {
@@ -326,19 +356,22 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
-		&i.OrchestraID,
-		&i.OrchestraStep,
-		&i.Result,
-		&i.ChoiceConfig,
-		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Result,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
 
 const getLastRunByProcess = `-- name: GetLastRunByProcess :one
-SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at FROM runs
+SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at, result, orchestra_id, orchestra_step, choice_config, chosen_index, execution_handle, stdout_offset, stderr_offset FROM runs
 WHERE process_id = $1
 ORDER BY scheduled_at DESC
 LIMIT 1
@@ -378,19 +411,22 @@ func (q *Queries) GetLastRunByProcess(ctx context.Context, processID string) (Ru
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
-		&i.OrchestraID,
-		&i.OrchestraStep,
-		&i.Result,
-		&i.ChoiceConfig,
-		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Result,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, orchestra_id, orchestra_step, result, choice_config, chosen_index, created_at, updated_at FROM runs WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, process_id, scheduled_at, state, origin, attempt, max_attempts, next_attempt_at, started_at, finished_at, duration_ms, exit_code, progress_total, progress_current, progress, progress_message, last_heartbeat_at, queue_reason, waiting_reason, actor_type, actor_id, killed_by_actor_type, killed_by_actor_id, triggered_by_run_id, replayed_from_run_id, effective_config, runtime, worker_id, tags, created_at, updated_at, result, orchestra_id, orchestra_step, choice_config, chosen_index, execution_handle, stdout_offset, stderr_offset FROM runs WHERE id = $1 AND workspace_id = $2
 `
 
 type GetRunParams struct {
@@ -432,19 +468,41 @@ func (q *Queries) GetRun(ctx context.Context, arg GetRunParams) (Run, error) {
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
-		&i.OrchestraID,
-		&i.OrchestraStep,
-		&i.Result,
-		&i.ChoiceConfig,
-		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Result,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
 
+const getRunExecutionHandle = `-- name: GetRunExecutionHandle :one
+SELECT execution_handle, stdout_offset, stderr_offset
+FROM runs
+WHERE id = $1 AND execution_handle IS NOT NULL
+`
+
+type GetRunExecutionHandleRow struct {
+	ExecutionHandle []byte `json:"execution_handle"`
+	StdoutOffset    int64  `json:"stdout_offset"`
+	StderrOffset    int64  `json:"stderr_offset"`
+}
+
+func (q *Queries) GetRunExecutionHandle(ctx context.Context, id string) (GetRunExecutionHandleRow, error) {
+	row := q.db.QueryRow(ctx, getRunExecutionHandle, id)
+	var i GetRunExecutionHandleRow
+	err := row.Scan(&i.ExecutionHandle, &i.StdoutOffset, &i.StderrOffset)
+	return i, err
+}
+
 const getRunWithProcess = `-- name: GetRunWithProcess :one
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, p.name AS process_name, p.execution_method, p.method_config,
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset, p.name AS process_name, p.execution_method, p.method_config,
        p.execution_timeout, p.heartbeat_timeout, p.timeout_action,
        p.max_attempts AS process_max_attempts, p.retry_backoff AS process_retry_backoff
 FROM runs r
@@ -488,13 +546,16 @@ type GetRunWithProcessRow struct {
 	Runtime             *string            `json:"runtime"`
 	WorkerID            *string            `json:"worker_id"`
 	Tags                []string           `json:"tags"`
-	OrchestraID         *string            `json:"orchestra_id"`
-	OrchestraStep       *int32             `json:"orchestra_step"`
-	Result              []byte             `json:"result,omitempty"`
-	ChoiceConfig        []byte             `json:"choice_config,omitempty"`
-	ChosenIndex         *int32             `json:"chosen_index"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	Result              []byte             `json:"result"`
+	OrchestraID         *string            `json:"orchestra_id"`
+	OrchestraStep       *int32             `json:"orchestra_step"`
+	ChoiceConfig        []byte             `json:"choice_config"`
+	ChosenIndex         *int32             `json:"chosen_index"`
+	ExecutionHandle     []byte             `json:"execution_handle"`
+	StdoutOffset        int64              `json:"stdout_offset"`
+	StderrOffset        int64              `json:"stderr_offset"`
 	ProcessName         string             `json:"process_name"`
 	ExecutionMethod     string             `json:"execution_method"`
 	MethodConfig        []byte             `json:"method_config"`
@@ -539,13 +600,16 @@ func (q *Queries) GetRunWithProcess(ctx context.Context, arg GetRunWithProcessPa
 		&i.Runtime,
 		&i.WorkerID,
 		&i.Tags,
-		&i.OrchestraID,
-		&i.OrchestraStep,
-		&i.Result,
-		&i.ChoiceConfig,
-		&i.ChosenIndex,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Result,
+		&i.OrchestraID,
+		&i.OrchestraStep,
+		&i.ChoiceConfig,
+		&i.ChosenIndex,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 		&i.ProcessName,
 		&i.ExecutionMethod,
 		&i.MethodConfig,
@@ -558,8 +622,80 @@ func (q *Queries) GetRunWithProcess(ctx context.Context, arg GetRunWithProcessPa
 	return i, err
 }
 
+const listActiveAsyncRuns = `-- name: ListActiveAsyncRuns :many
+SELECT
+    r.id,
+    r.workspace_id,
+    r.process_id,
+    r.attempt,
+    r.state,
+    r.started_at,
+    COALESCE(ra.id, '') AS attempt_id,
+    r.execution_handle,
+    r.stdout_offset,
+    r.stderr_offset,
+    p.execution_method
+FROM runs r
+JOIN processes p ON p.id = r.process_id
+LEFT JOIN LATERAL (
+    SELECT id
+    FROM run_attempts
+    WHERE run_id = r.id AND finished_at IS NULL
+    ORDER BY attempt_number DESC
+    LIMIT 1
+) ra ON true
+WHERE r.state IN ('running', 'kill_requested')
+  AND r.execution_handle IS NOT NULL
+`
+
+type ListActiveAsyncRunsRow struct {
+	ID              string             `json:"id"`
+	WorkspaceID     string             `json:"workspace_id"`
+	ProcessID       string             `json:"process_id"`
+	Attempt         int32              `json:"attempt"`
+	State           string             `json:"state"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	AttemptID       string             `json:"attempt_id"`
+	ExecutionHandle []byte             `json:"execution_handle"`
+	StdoutOffset    int64              `json:"stdout_offset"`
+	StderrOffset    int64              `json:"stderr_offset"`
+	ExecutionMethod string             `json:"execution_method"`
+}
+
+func (q *Queries) ListActiveAsyncRuns(ctx context.Context) ([]ListActiveAsyncRunsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveAsyncRuns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveAsyncRunsRow{}
+	for rows.Next() {
+		var i ListActiveAsyncRunsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProcessID,
+			&i.Attempt,
+			&i.State,
+			&i.StartedAt,
+			&i.AttemptID,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
+			&i.ExecutionMethod,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listKillRequestedRuns = `-- name: ListKillRequestedRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, p.execution_method, p.runtime
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset, p.execution_method, p.runtime
 FROM runs r
 JOIN processes p ON p.id = r.process_id
 WHERE r.state = 'kill_requested'
@@ -598,6 +734,14 @@ type ListKillRequestedRunsRow struct {
 	Tags              []string           `json:"tags"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Result            []byte             `json:"result"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	ChoiceConfig      []byte             `json:"choice_config"`
+	ChosenIndex       *int32             `json:"chosen_index"`
+	ExecutionHandle   []byte             `json:"execution_handle"`
+	StdoutOffset      int64              `json:"stdout_offset"`
+	StderrOffset      int64              `json:"stderr_offset"`
 	ExecutionMethod   string             `json:"execution_method"`
 	Runtime_2         string             `json:"runtime_2"`
 }
@@ -644,6 +788,14 @@ func (q *Queries) ListKillRequestedRuns(ctx context.Context) ([]ListKillRequeste
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.ExecutionMethod,
 			&i.Runtime_2,
 		); err != nil {
@@ -658,7 +810,7 @@ func (q *Queries) ListKillRequestedRuns(ctx context.Context) ([]ListKillRequeste
 }
 
 const listRunningRuns = `-- name: ListRunningRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, p.execution_timeout, p.heartbeat_timeout, p.timeout_action, p.execution_method
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset, p.execution_timeout, p.heartbeat_timeout, p.timeout_action, p.execution_method
 FROM runs r
 JOIN processes p ON p.id = r.process_id
 WHERE r.state = 'running'
@@ -697,6 +849,14 @@ type ListRunningRunsRow struct {
 	Tags              []string           `json:"tags"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Result            []byte             `json:"result"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	ChoiceConfig      []byte             `json:"choice_config"`
+	ChosenIndex       *int32             `json:"chosen_index"`
+	ExecutionHandle   []byte             `json:"execution_handle"`
+	StdoutOffset      int64              `json:"stdout_offset"`
+	StderrOffset      int64              `json:"stderr_offset"`
 	ExecutionTimeout  pgtype.Interval    `json:"execution_timeout"`
 	HeartbeatTimeout  pgtype.Interval    `json:"heartbeat_timeout"`
 	TimeoutAction     string             `json:"timeout_action"`
@@ -745,6 +905,14 @@ func (q *Queries) ListRunningRuns(ctx context.Context) ([]ListRunningRunsRow, er
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.ExecutionTimeout,
 			&i.HeartbeatTimeout,
 			&i.TimeoutAction,
@@ -761,7 +929,7 @@ func (q *Queries) ListRunningRuns(ctx context.Context) ([]ListRunningRunsRow, er
 }
 
 const listRuns = `-- name: ListRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, p.name AS process_name
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset, p.name AS process_name
 FROM runs r
 JOIN processes p ON p.id = r.process_id
 WHERE r.workspace_id = $1
@@ -814,6 +982,14 @@ type ListRunsRow struct {
 	Tags              []string           `json:"tags"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Result            []byte             `json:"result"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	ChoiceConfig      []byte             `json:"choice_config"`
+	ChosenIndex       *int32             `json:"chosen_index"`
+	ExecutionHandle   []byte             `json:"execution_handle"`
+	StdoutOffset      int64              `json:"stdout_offset"`
+	StderrOffset      int64              `json:"stderr_offset"`
 	ProcessName       string             `json:"process_name"`
 }
 
@@ -866,6 +1042,14 @@ func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]ListRunsR
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.ProcessName,
 		); err != nil {
 			return nil, err
@@ -879,7 +1063,7 @@ func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]ListRunsR
 }
 
 const listUpcomingRuns = `-- name: ListUpcomingRuns :many
-SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, p.name AS process_name
+SELECT r.id, r.workspace_id, r.process_id, r.scheduled_at, r.state, r.origin, r.attempt, r.max_attempts, r.next_attempt_at, r.started_at, r.finished_at, r.duration_ms, r.exit_code, r.progress_total, r.progress_current, r.progress, r.progress_message, r.last_heartbeat_at, r.queue_reason, r.waiting_reason, r.actor_type, r.actor_id, r.killed_by_actor_type, r.killed_by_actor_id, r.triggered_by_run_id, r.replayed_from_run_id, r.effective_config, r.runtime, r.worker_id, r.tags, r.created_at, r.updated_at, r.result, r.orchestra_id, r.orchestra_step, r.choice_config, r.chosen_index, r.execution_handle, r.stdout_offset, r.stderr_offset, p.name AS process_name
 FROM runs r
 JOIN processes p ON p.id = r.process_id
 WHERE r.workspace_id = $1 AND r.state IN ('pending', 'queued')
@@ -925,6 +1109,14 @@ type ListUpcomingRunsRow struct {
 	Tags              []string           `json:"tags"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Result            []byte             `json:"result"`
+	OrchestraID       *string            `json:"orchestra_id"`
+	OrchestraStep     *int32             `json:"orchestra_step"`
+	ChoiceConfig      []byte             `json:"choice_config"`
+	ChosenIndex       *int32             `json:"chosen_index"`
+	ExecutionHandle   []byte             `json:"execution_handle"`
+	StdoutOffset      int64              `json:"stdout_offset"`
+	StderrOffset      int64              `json:"stderr_offset"`
 	ProcessName       string             `json:"process_name"`
 }
 
@@ -970,6 +1162,14 @@ func (q *Queries) ListUpcomingRuns(ctx context.Context, arg ListUpcomingRunsPara
 			&i.Tags,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Result,
+			&i.OrchestraID,
+			&i.OrchestraStep,
+			&i.ChoiceConfig,
+			&i.ChosenIndex,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.ProcessName,
 		); err != nil {
 			return nil, err
@@ -1002,6 +1202,53 @@ func (q *Queries) RunExists(ctx context.Context, arg RunExistsParams) (bool, err
 	return exists, err
 }
 
+const saveRunExecutionHandle = `-- name: SaveRunExecutionHandle :exec
+UPDATE runs SET
+    execution_handle = $2,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1
+`
+
+type SaveRunExecutionHandleParams struct {
+	ID              string `json:"id"`
+	ExecutionHandle []byte `json:"execution_handle"`
+}
+
+func (q *Queries) SaveRunExecutionHandle(ctx context.Context, arg SaveRunExecutionHandleParams) error {
+	_, err := q.db.Exec(ctx, saveRunExecutionHandle, arg.ID, arg.ExecutionHandle)
+	return err
+}
+
+const setRunChoiceConfig = `-- name: SetRunChoiceConfig :exec
+UPDATE runs SET choice_config = $2, updated_at = now() WHERE id = $1
+`
+
+type SetRunChoiceConfigParams struct {
+	ID           string `json:"id"`
+	ChoiceConfig []byte `json:"choice_config"`
+}
+
+func (q *Queries) SetRunChoiceConfig(ctx context.Context, arg SetRunChoiceConfigParams) error {
+	_, err := q.db.Exec(ctx, setRunChoiceConfig, arg.ID, arg.ChoiceConfig)
+	return err
+}
+
+const setRunChosenIndex = `-- name: SetRunChosenIndex :exec
+UPDATE runs SET chosen_index = $2, updated_at = now() WHERE id = $1
+`
+
+type SetRunChosenIndexParams struct {
+	ID          string `json:"id"`
+	ChosenIndex *int32 `json:"chosen_index"`
+}
+
+func (q *Queries) SetRunChosenIndex(ctx context.Context, arg SetRunChosenIndexParams) error {
+	_, err := q.db.Exec(ctx, setRunChosenIndex, arg.ID, arg.ChosenIndex)
+	return err
+}
+
 const snapshotRunConfig = `-- name: SnapshotRunConfig :exec
 UPDATE runs SET effective_config = $2, updated_at = now() WHERE id = $1
 `
@@ -1013,6 +1260,25 @@ type SnapshotRunConfigParams struct {
 
 func (q *Queries) SnapshotRunConfig(ctx context.Context, arg SnapshotRunConfigParams) error {
 	_, err := q.db.Exec(ctx, snapshotRunConfig, arg.ID, arg.EffectiveConfig)
+	return err
+}
+
+const updateRunOffsets = `-- name: UpdateRunOffsets :exec
+UPDATE runs SET
+    stdout_offset = $2,
+    stderr_offset = $3,
+    updated_at = now()
+WHERE id = $1
+`
+
+type UpdateRunOffsetsParams struct {
+	ID           string `json:"id"`
+	StdoutOffset int64  `json:"stdout_offset"`
+	StderrOffset int64  `json:"stderr_offset"`
+}
+
+func (q *Queries) UpdateRunOffsets(ctx context.Context, arg UpdateRunOffsetsParams) error {
+	_, err := q.db.Exec(ctx, updateRunOffsets, arg.ID, arg.StdoutOffset, arg.StderrOffset)
 	return err
 }
 

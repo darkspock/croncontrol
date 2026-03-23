@@ -261,6 +261,9 @@ CREATE TABLE runs (
     replayed_from_run_id    TEXT REFERENCES runs(id) ON DELETE SET NULL,
     -- configuration snapshot
     effective_config        JSONB,               -- snapshotted at first attempt
+    execution_handle        JSONB,               -- durable async execution handle
+    stdout_offset           BIGINT NOT NULL DEFAULT 0,
+    stderr_offset           BIGINT NOT NULL DEFAULT 0,
     -- runtime routing
     runtime                 VARCHAR(20) CHECK (runtime IN ('direct', 'worker')),
     worker_id               TEXT REFERENCES workers(id) ON DELETE SET NULL,
@@ -287,6 +290,8 @@ CREATE INDEX idx_runs_running ON runs(workspace_id)
 -- Kill requested
 CREATE INDEX idx_runs_kill_requested ON runs(id)
     WHERE state = 'kill_requested';
+CREATE INDEX idx_runs_async_handle ON runs(id)
+    WHERE execution_handle IS NOT NULL;
 -- Parallelism check
 CREATE INDEX idx_runs_process_active ON runs(process_id, state);
 -- History
@@ -422,6 +427,9 @@ CREATE TABLE jobs (
     actor_id            TEXT,
     -- snapshot
     effective_config    JSONB,                   -- snapshotted at first attempt
+    execution_handle    JSONB,                   -- durable async execution handle
+    stdout_offset       BIGINT NOT NULL DEFAULT 0,
+    stderr_offset       BIGINT NOT NULL DEFAULT 0,
     tags                TEXT[] DEFAULT '{}',      -- inherited from queue
     -- routing
     worker_id           TEXT REFERENCES workers(id) ON DELETE SET NULL,
@@ -440,6 +448,8 @@ CREATE INDEX idx_jobs_waiting_worker ON jobs(workspace_id)
     WHERE state = 'waiting_for_worker';
 CREATE INDEX idx_jobs_kill_requested ON jobs(id)
     WHERE state = 'kill_requested';
+CREATE INDEX idx_jobs_async_handle ON jobs(id)
+    WHERE execution_handle IS NOT NULL;
 CREATE INDEX idx_jobs_expiring ON jobs(expires_at)
     WHERE state = 'pending' AND expires_at IS NOT NULL;
 CREATE UNIQUE INDEX idx_jobs_idempotency ON jobs(workspace_id, idempotency_key)

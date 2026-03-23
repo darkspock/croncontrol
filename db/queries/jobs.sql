@@ -58,6 +58,73 @@ WHERE id = $1;
 -- name: SnapshotJobConfig :exec
 UPDATE jobs SET effective_config = $2, updated_at = now() WHERE id = $1;
 
+-- name: SaveJobExecutionHandle :exec
+UPDATE jobs SET
+    execution_handle = $2,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: ClearJobExecutionHandle :exec
+UPDATE jobs SET
+    execution_handle = NULL,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: UpdateJobOffsets :exec
+UPDATE jobs SET
+    stdout_offset = $2,
+    stderr_offset = $3,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: AppendJobAttemptResponseChunk :exec
+UPDATE job_attempts
+SET response_body = COALESCE(response_body, '') || $2
+WHERE id = $1;
+
+-- name: GetJobExecutionHandle :one
+SELECT execution_handle, stdout_offset, stderr_offset
+FROM jobs
+WHERE id = $1 AND execution_handle IS NOT NULL;
+
+-- name: ListActiveAsyncJobs :many
+SELECT
+    j.id,
+    j.workspace_id,
+    j.queue_id,
+    j.attempt,
+    j.state,
+    COALESCE(ja.id, '') AS attempt_id,
+    ja.started_at,
+    j.execution_handle,
+    j.stdout_offset,
+    j.stderr_offset,
+    q.execution_method,
+    COALESCE(j.max_attempts, q.max_attempts) AS max_attempts,
+    COALESCE(j.retry_backoff, q.retry_backoff) AS retry_backoff,
+    q.max_response_size
+FROM jobs j
+JOIN queues q ON q.id = j.queue_id
+LEFT JOIN LATERAL (
+    SELECT id, started_at
+    FROM job_attempts
+    WHERE job_id = j.id AND finished_at IS NULL
+    ORDER BY attempt_number DESC
+    LIMIT 1
+) ja ON true
+WHERE j.state IN ('running', 'kill_requested')
+  AND j.execution_handle IS NOT NULL;
+
+-- name: ListKillRequestedAsyncJobIDs :many
+SELECT id
+FROM jobs
+WHERE state = 'kill_requested'
+  AND execution_handle IS NOT NULL;
+
 -- name: ListJobs :many
 SELECT j.*, q.name AS queue_name
 FROM jobs j

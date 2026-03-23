@@ -43,7 +43,7 @@ export function useRun(id: string) {
     enabled: !!id,
     refetchInterval: (query) => {
       const state = query.state.data?.data?.state
-      return state === 'running' || state === 'pending' ? 5000 : false
+      return ['pending', 'queued', 'waiting_for_worker', 'running', 'retrying', 'kill_requested'].includes(state) ? 5000 : false
     },
   })
 }
@@ -53,6 +53,7 @@ export function useRunOutput(id: string) {
     queryKey: ['run-output', id],
     queryFn: () => api.getRunOutput(id),
     enabled: !!id,
+    refetchInterval: 5000,
   })
 }
 
@@ -69,6 +70,18 @@ export function useJobs(params?: string) {
   return useQuery({
     queryKey: ['jobs', params],
     queryFn: () => api.listJobs(params),
+  })
+}
+
+export function useJob(id: string) {
+  return useQuery({
+    queryKey: ['job', id],
+    queryFn: () => api.getJob(id),
+    enabled: !!id,
+    refetchInterval: (query) => {
+      const state = query.state.data?.data?.job?.state
+      return ['pending', 'waiting_for_worker', 'running', 'retrying', 'kill_requested'].includes(state) ? 5000 : false
+    },
   })
 }
 

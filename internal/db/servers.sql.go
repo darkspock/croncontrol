@@ -7,54 +7,33 @@ package db
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// WorkspaceServer represents a provisioned server for a workspace.
-type WorkspaceServer struct {
-	ID                string             `json:"id"`
-	WorkspaceID       string             `json:"workspace_id"`
-	HetznerID         int64              `json:"hetzner_id"`
-	Name              string             `json:"name"`
-	IPAddress         *string            `json:"ip_address"`
-	State             string             `json:"state"`
-	ServerType        string             `json:"server_type"`
-	Datacenter        string             `json:"datacenter"`
-	ContainersRunning int32              `json:"containers_running"`
-	MaxContainers     int32              `json:"max_containers"`
-	LastActivityAt    *time.Time         `json:"last_activity_at"`
-	MonthlyCost       pgtype.Numeric     `json:"monthly_cost"`
-	CreatedAt         time.Time          `json:"created_at"`
-	DestroyedAt       *time.Time         `json:"destroyed_at"`
-	UpdatedAt         time.Time          `json:"updated_at"`
-}
+const countServersByWorkspace = `-- name: CountServersByWorkspace :one
+SELECT count(*) FROM workspace_servers WHERE workspace_id = $1 AND state NOT IN ('destroyed', 'destroying')
+`
 
-const serverColumns = "id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at"
-
-func scanServer(row interface{ Scan(...any) error }) (WorkspaceServer, error) {
-	var s WorkspaceServer
-	err := row.Scan(
-		&s.ID, &s.WorkspaceID, &s.HetznerID, &s.Name, &s.IPAddress,
-		&s.State, &s.ServerType, &s.Datacenter,
-		&s.ContainersRunning, &s.MaxContainers, &s.LastActivityAt,
-		&s.MonthlyCost, &s.CreatedAt, &s.DestroyedAt, &s.UpdatedAt,
-	)
-	return s, err
+func (q *Queries) CountServersByWorkspace(ctx context.Context, workspaceID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countServersByWorkspace, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createServer = `-- name: CreateServer :one
 INSERT INTO workspace_servers (id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, max_containers, monthly_cost)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING ` + serverColumns
+RETURNING id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at
+`
 
 type CreateServerParams struct {
 	ID            string         `json:"id"`
 	WorkspaceID   string         `json:"workspace_id"`
 	HetznerID     int64          `json:"hetzner_id"`
 	Name          string         `json:"name"`
-	IPAddress     *string        `json:"ip_address"`
+	IpAddress     *string        `json:"ip_address"`
 	State         string         `json:"state"`
 	ServerType    string         `json:"server_type"`
 	Datacenter    string         `json:"datacenter"`
@@ -64,42 +43,137 @@ type CreateServerParams struct {
 
 func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (WorkspaceServer, error) {
 	row := q.db.QueryRow(ctx, createServer,
-		arg.ID, arg.WorkspaceID, arg.HetznerID, arg.Name, arg.IPAddress,
-		arg.State, arg.ServerType, arg.Datacenter, arg.MaxContainers, arg.MonthlyCost,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.HetznerID,
+		arg.Name,
+		arg.IpAddress,
+		arg.State,
+		arg.ServerType,
+		arg.Datacenter,
+		arg.MaxContainers,
+		arg.MonthlyCost,
 	)
-	return scanServer(row)
+	var i WorkspaceServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.HetznerID,
+		&i.Name,
+		&i.IpAddress,
+		&i.State,
+		&i.ServerType,
+		&i.Datacenter,
+		&i.ContainersRunning,
+		&i.MaxContainers,
+		&i.LastActivityAt,
+		&i.MonthlyCost,
+		&i.CreatedAt,
+		&i.DestroyedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const decrementContainers = `-- name: DecrementContainers :exec
+UPDATE workspace_servers SET
+    containers_running = GREATEST(containers_running - 1, 0),
+    last_activity_at = now(),
+    updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) DecrementContainers(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, decrementContainers, id)
+	return err
+}
+
+const destroyServersByWorkspace = `-- name: DestroyServersByWorkspace :exec
+UPDATE workspace_servers SET state = 'destroying', updated_at = now()
+WHERE workspace_id = $1 AND state NOT IN ('destroyed', 'destroying')
+`
+
+func (q *Queries) DestroyServersByWorkspace(ctx context.Context, workspaceID string) error {
+	_, err := q.db.Exec(ctx, destroyServersByWorkspace, workspaceID)
+	return err
+}
+
+const findServerWithCapacity = `-- name: FindServerWithCapacity :one
+SELECT id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at FROM workspace_servers
+WHERE workspace_id = $1
+  AND state IN ('ready', 'active')
+  AND containers_running < max_containers
+ORDER BY containers_running ASC
+LIMIT 1
+`
+
+func (q *Queries) FindServerWithCapacity(ctx context.Context, workspaceID string) (WorkspaceServer, error) {
+	row := q.db.QueryRow(ctx, findServerWithCapacity, workspaceID)
+	var i WorkspaceServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.HetznerID,
+		&i.Name,
+		&i.IpAddress,
+		&i.State,
+		&i.ServerType,
+		&i.Datacenter,
+		&i.ContainersRunning,
+		&i.MaxContainers,
+		&i.LastActivityAt,
+		&i.MonthlyCost,
+		&i.CreatedAt,
+		&i.DestroyedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getServer = `-- name: GetServer :one
-SELECT ` + serverColumns + ` FROM workspace_servers WHERE id = $1`
+SELECT id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at FROM workspace_servers WHERE id = $1
+`
 
 func (q *Queries) GetServer(ctx context.Context, id string) (WorkspaceServer, error) {
 	row := q.db.QueryRow(ctx, getServer, id)
-	return scanServer(row)
+	var i WorkspaceServer
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.HetznerID,
+		&i.Name,
+		&i.IpAddress,
+		&i.State,
+		&i.ServerType,
+		&i.Datacenter,
+		&i.ContainersRunning,
+		&i.MaxContainers,
+		&i.LastActivityAt,
+		&i.MonthlyCost,
+		&i.CreatedAt,
+		&i.DestroyedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
-const listServersByWorkspace = `-- name: ListServersByWorkspace :many
-SELECT ` + serverColumns + ` FROM workspace_servers WHERE workspace_id = $1 ORDER BY created_at DESC`
+const incrementContainers = `-- name: IncrementContainers :exec
+UPDATE workspace_servers SET
+    containers_running = containers_running + 1,
+    state = 'active',
+    last_activity_at = now(),
+    updated_at = now()
+WHERE id = $1
+`
 
-func (q *Queries) ListServersByWorkspace(ctx context.Context, workspaceID string) ([]WorkspaceServer, error) {
-	rows, err := q.db.Query(ctx, listServersByWorkspace, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []WorkspaceServer
-	for rows.Next() {
-		s, err := scanServer(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, s)
-	}
-	return items, nil
+func (q *Queries) IncrementContainers(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, incrementContainers, id)
+	return err
 }
 
 const listActiveServersByWorkspace = `-- name: ListActiveServersByWorkspace :many
-SELECT ` + serverColumns + ` FROM workspace_servers WHERE workspace_id = $1 AND state NOT IN ('destroyed') ORDER BY created_at DESC`
+SELECT id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at FROM workspace_servers WHERE workspace_id = $1 AND state NOT IN ('destroyed') ORDER BY created_at DESC
+`
 
 func (q *Queries) ListActiveServersByWorkspace(ctx context.Context, workspaceID string) ([]WorkspaceServer, error) {
 	rows, err := q.db.Query(ctx, listActiveServersByWorkspace, workspaceID)
@@ -107,106 +181,162 @@ func (q *Queries) ListActiveServersByWorkspace(ctx context.Context, workspaceID 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WorkspaceServer
+	items := []WorkspaceServer{}
 	for rows.Next() {
-		s, err := scanServer(rows)
-		if err != nil {
+		var i WorkspaceServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.HetznerID,
+			&i.Name,
+			&i.IpAddress,
+			&i.State,
+			&i.ServerType,
+			&i.Datacenter,
+			&i.ContainersRunning,
+			&i.MaxContainers,
+			&i.LastActivityAt,
+			&i.MonthlyCost,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, s)
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return items, nil
 }
 
-const updateServerState = `-- name: UpdateServerState :exec
-UPDATE workspace_servers SET state = $2, updated_at = now() WHERE id = $1`
-
-func (q *Queries) UpdateServerState(ctx context.Context, id, state string) error {
-	_, err := q.db.Exec(ctx, updateServerState, id, state)
-	return err
-}
-
-const markServerReady = `-- name: MarkServerReady :exec
-UPDATE workspace_servers SET state = 'ready', ip_address = COALESCE($2, ip_address), updated_at = now() WHERE id = $1`
-
-func (q *Queries) MarkServerReady(ctx context.Context, id string, ipAddress *string) error {
-	_, err := q.db.Exec(ctx, markServerReady, id, ipAddress)
-	return err
-}
-
-const incrementContainers = `-- name: IncrementContainers :exec
-UPDATE workspace_servers SET containers_running = containers_running + 1, state = 'active', last_activity_at = now(), updated_at = now() WHERE id = $1`
-
-func (q *Queries) IncrementContainers(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, incrementContainers, id)
-	return err
-}
-
-const decrementContainers = `-- name: DecrementContainers :exec
-UPDATE workspace_servers SET containers_running = GREATEST(containers_running - 1, 0), last_activity_at = now(), updated_at = now() WHERE id = $1`
-
-func (q *Queries) DecrementContainers(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, decrementContainers, id)
-	return err
-}
-
 const listIdleServers = `-- name: ListIdleServers :many
-SELECT ` + serverColumns + ` FROM workspace_servers
+SELECT id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at FROM workspace_servers
 WHERE state IN ('ready', 'active')
   AND containers_running = 0
   AND last_activity_at < now() - $1::interval
-ORDER BY last_activity_at ASC`
+ORDER BY last_activity_at ASC
+`
 
-func (q *Queries) ListIdleServers(ctx context.Context, gracePeriod string) ([]WorkspaceServer, error) {
+func (q *Queries) ListIdleServers(ctx context.Context, gracePeriod pgtype.Interval) ([]WorkspaceServer, error) {
 	rows, err := q.db.Query(ctx, listIdleServers, gracePeriod)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WorkspaceServer
+	items := []WorkspaceServer{}
 	for rows.Next() {
-		s, err := scanServer(rows)
-		if err != nil {
+		var i WorkspaceServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.HetznerID,
+			&i.Name,
+			&i.IpAddress,
+			&i.State,
+			&i.ServerType,
+			&i.Datacenter,
+			&i.ContainersRunning,
+			&i.MaxContainers,
+			&i.LastActivityAt,
+			&i.MonthlyCost,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, s)
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return items, nil
 }
 
+const listServersByWorkspace = `-- name: ListServersByWorkspace :many
+SELECT id, workspace_id, hetzner_id, name, ip_address, state, server_type, datacenter, containers_running, max_containers, last_activity_at, monthly_cost, created_at, destroyed_at, updated_at FROM workspace_servers WHERE workspace_id = $1 ORDER BY created_at DESC
+`
+
+func (q *Queries) ListServersByWorkspace(ctx context.Context, workspaceID string) ([]WorkspaceServer, error) {
+	rows, err := q.db.Query(ctx, listServersByWorkspace, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkspaceServer{}
+	for rows.Next() {
+		var i WorkspaceServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.HetznerID,
+			&i.Name,
+			&i.IpAddress,
+			&i.State,
+			&i.ServerType,
+			&i.Datacenter,
+			&i.ContainersRunning,
+			&i.MaxContainers,
+			&i.LastActivityAt,
+			&i.MonthlyCost,
+			&i.CreatedAt,
+			&i.DestroyedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markServerActive = `-- name: MarkServerActive :exec
+UPDATE workspace_servers SET state = 'active', last_activity_at = now(), updated_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkServerActive(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, markServerActive, id)
+	return err
+}
+
 const markServerDestroyed = `-- name: MarkServerDestroyed :exec
-UPDATE workspace_servers SET state = 'destroyed', destroyed_at = now(), updated_at = now() WHERE id = $1`
+UPDATE workspace_servers SET state = 'destroyed', destroyed_at = now(), updated_at = now() WHERE id = $1
+`
 
 func (q *Queries) MarkServerDestroyed(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, markServerDestroyed, id)
 	return err
 }
 
-const findServerWithCapacity = `-- name: FindServerWithCapacity :one
-SELECT ` + serverColumns + ` FROM workspace_servers
-WHERE workspace_id = $1 AND state IN ('ready', 'active') AND containers_running < max_containers
-ORDER BY containers_running ASC LIMIT 1`
+const markServerReady = `-- name: MarkServerReady :exec
+UPDATE workspace_servers SET state = 'ready', ip_address = COALESCE($2, ip_address), updated_at = now() WHERE id = $1
+`
 
-func (q *Queries) FindServerWithCapacity(ctx context.Context, workspaceID string) (WorkspaceServer, error) {
-	row := q.db.QueryRow(ctx, findServerWithCapacity, workspaceID)
-	return scanServer(row)
+type MarkServerReadyParams struct {
+	ID        string  `json:"id"`
+	IpAddress *string `json:"ip_address"`
 }
 
-const countServersByWorkspace = `-- name: CountServersByWorkspace :one
-SELECT count(*) FROM workspace_servers WHERE workspace_id = $1 AND state NOT IN ('destroyed', 'destroying')`
-
-func (q *Queries) CountServersByWorkspace(ctx context.Context, workspaceID string) (int64, error) {
-	row := q.db.QueryRow(ctx, countServersByWorkspace, workspaceID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+func (q *Queries) MarkServerReady(ctx context.Context, arg MarkServerReadyParams) error {
+	_, err := q.db.Exec(ctx, markServerReady, arg.ID, arg.IpAddress)
+	return err
 }
 
-const destroyServersByWorkspace = `-- name: DestroyServersByWorkspace :exec
-UPDATE workspace_servers SET state = 'destroying', updated_at = now()
-WHERE workspace_id = $1 AND state NOT IN ('destroyed', 'destroying')`
+const updateServerState = `-- name: UpdateServerState :exec
+UPDATE workspace_servers SET state = $2, updated_at = now() WHERE id = $1
+`
 
-func (q *Queries) DestroyServersByWorkspace(ctx context.Context, workspaceID string) error {
-	_, err := q.db.Exec(ctx, destroyServersByWorkspace, workspaceID)
+type UpdateServerStateParams struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
+}
+
+func (q *Queries) UpdateServerState(ctx context.Context, arg UpdateServerStateParams) error {
+	_, err := q.db.Exec(ctx, updateServerState, arg.ID, arg.State)
 	return err
 }

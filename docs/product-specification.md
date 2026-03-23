@@ -234,6 +234,13 @@ Run states:
 - `cancelled`
 - `paused`
 
+Cancellation semantics:
+
+- `cancelled` means execution never started
+- `kill_requested` means stop was requested for an active execution but remote confirmation has not arrived yet
+- `killed` is terminal and is set only after the execution plane confirms the stop
+- `CancelRun` and `CancelJob` may therefore return either `cancelled` or `kill_requested` depending on the current state
+
 ## Queues and Jobs
 
 `queue.name` is unique per workspace.
@@ -304,6 +311,7 @@ Core rules:
 - A worker belongs to one workspace only
 - Communication is outbound only
 - Initial implementation uses long polling
+- Worker also performs short control polling for commands affecting active tasks
 - Worker credentials are separate from normal API keys
 - Enrollment uses a temporary enrollment token and results in a dedicated worker credential
 - Capabilities are auto-reported by the worker
@@ -353,10 +361,15 @@ Failure behavior:
 - Header names are normalized case-insensitively
 - Supports simple built-in template variables only
 - `{{now}}` renders as UTC ISO 8601
-- HTTP is request/response only
-- No async `202` lifecycle in the canonical model
 - Heartbeat/progress does not apply to HTTP
 - HTTP config remains inline rather than reusable
+- HTTP supports explicit `dispatch_mode`
+  - `sync`
+  - `async_blind`
+  - `async_tracked`
+- `async_blind` treats accepted dispatch as terminal success of dispatch only
+- `async_tracked` persists a remote handle and resolves terminal state through polling
+- Tracked HTTP may define accepted status codes, derived status/cancel URLs, status field mappings, and poll/cancel methods
 
 ### SSH
 
@@ -411,6 +424,16 @@ Supported variable families include:
 - Dashboard should show run state and latest attempt summary during `retrying`
 - Output retrieval is simple and size-limited in the first version
 - Truncated output must expose `truncated = true` and original size estimate when available
+
+## Canonical Execution Contract
+
+Execution methods follow a shared control-plane contract:
+
+- `Start()` dispatches execution and returns either a terminal result or a durable execution handle
+- `Poll()` inspects a durable handle, appends incremental output, and resolves remote terminal state
+- `Kill()` requests stop for an active handle
+
+Durable handles are persisted for runs and jobs so monitoring and cancellation survive control-plane restarts.
 
 ## Events and Webhooks
 

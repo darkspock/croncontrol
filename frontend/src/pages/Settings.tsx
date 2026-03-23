@@ -184,7 +184,14 @@ function WorkersTab() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [workerName, setWorkerName] = useState('')
+  const [maxConcurrency, setMaxConcurrency] = useState(5)
+  const [labelsText, setLabelsText] = useState('')
   const [enrollToken, setEnrollToken] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editMaxConcurrency, setEditMaxConcurrency] = useState(5)
+  const [editEnabled, setEditEnabled] = useState(true)
+  const [editLabelsText, setEditLabelsText] = useState('')
 
   const createMutation = useMutation({
     mutationFn: (data: any) => api.createWorker(data),
@@ -198,6 +205,19 @@ function WorkersTab() {
     mutationFn: (id: string) => api.deleteWorker(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['workers'] }),
   })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => api.updateWorker(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workers'] })
+      setEditingId(null)
+    },
+  })
+
+  const parseLabels = (raw: string) => {
+    if (!raw.trim()) return undefined
+    return JSON.parse(raw)
+  }
 
   return (
     <div className="space-y-4">
@@ -240,8 +260,13 @@ function WorkersTab() {
           ) : (
             <div className="space-y-3">
               <input value={workerName} onChange={(e) => setWorkerName(e.target.value)} placeholder="Worker name" className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm" />
+              <input value={maxConcurrency} onChange={(e) => setMaxConcurrency(Number(e.target.value))} type="number" min={1}
+                placeholder="Max concurrency" className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm" />
+              <textarea value={labelsText} onChange={(e) => setLabelsText(e.target.value)} rows={3}
+                placeholder='Labels JSON: ["linux","prod"] or {"region":"eu-west-1"}'
+                className="w-full px-3 py-1.5 rounded-md border border-border bg-background text-sm font-mono" />
               <div className="flex gap-2">
-                <button onClick={() => createMutation.mutate({ name: workerName })} className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm">Create</button>
+                <button onClick={() => createMutation.mutate({ name: workerName, max_concurrency: maxConcurrency, labels: parseLabels(labelsText) })} className="px-3 py-1.5 rounded-md bg-indigo-500 text-white text-sm">Create</button>
                 <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded-md border border-border text-sm">Cancel</button>
               </div>
             </div>
@@ -258,10 +283,71 @@ function WorkersTab() {
           <div key={w.id} className="flex items-center gap-4 px-4 py-3">
             <span className={cn('w-2 h-2 rounded-full', w.status === 'online' ? 'bg-emerald-400' : w.status === 'unhealthy' ? 'bg-amber-400' : 'bg-zinc-500')} />
             <div className="flex-1">
-              <p className="text-sm font-medium">{w.name}</p>
-              <p className="text-xs text-muted-foreground font-mono">{w.status} · max {w.max_concurrency} concurrent</p>
+              {editingId === w.id ? (
+                <div className="space-y-2">
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-2 py-1 rounded border border-border bg-background text-sm" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={editMaxConcurrency} onChange={(e) => setEditMaxConcurrency(Number(e.target.value))} type="number" min={1}
+                      className="w-full px-2 py-1 rounded border border-border bg-background text-sm" />
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input type="checkbox" checked={editEnabled} onChange={(e) => setEditEnabled(e.target.checked)} />
+                      Enabled
+                    </label>
+                  </div>
+                  <textarea value={editLabelsText} onChange={(e) => setEditLabelsText(e.target.value)} rows={3}
+                    className="w-full px-2 py-1 rounded border border-border bg-background text-xs font-mono"
+                    placeholder='["linux","prod"] or {"region":"eu-west-1"}' />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateMutation.mutate({
+                        id: w.id,
+                        data: {
+                          name: editName,
+                          max_concurrency: editMaxConcurrency,
+                          enabled: editEnabled,
+                          labels: parseLabels(editLabelsText),
+                        },
+                      })}
+                      className="px-2 py-1 rounded bg-indigo-500 text-white text-xs"
+                    >
+                      Save
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="px-2 py-1 rounded border border-border text-xs">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">{w.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{w.status} · max {w.max_concurrency} concurrent</p>
+                  {w.labels && (
+                    <pre className="mt-1 text-[11px] font-mono text-zinc-400 overflow-auto max-h-20">
+                      {typeof w.labels === 'string'
+                        ? (() => { try { return JSON.stringify(JSON.parse(w.labels), null, 2) } catch { return w.labels } })()
+                        : JSON.stringify(w.labels, null, 2)}
+                    </pre>
+                  )}
+                </>
+              )}
             </div>
             {w.last_heartbeat_at && <span className="text-xs text-muted-foreground">heartbeat {formatTimeAgo(w.last_heartbeat_at)}</span>}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(w.id)
+                    setEditName(w.name)
+                    setEditMaxConcurrency(w.max_concurrency)
+                    setEditEnabled(w.enabled)
+                    setEditLabelsText(w.labels ? (typeof w.labels === 'string' ? w.labels : JSON.stringify(w.labels, null, 2)) : '')
+                  }}
+                  className="p-1.5 rounded hover:bg-muted transition-colors"
+                >
+                  <Pencil size={14} className="text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Edit worker</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button type="button" onClick={() => { if (confirm('Delete this worker?')) deleteMutation.mutate(w.id) }} className="p-1.5 rounded hover:bg-red-500/10 transition-colors">

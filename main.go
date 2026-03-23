@@ -25,6 +25,9 @@ import (
 	"github.com/croncontrol/croncontrol/internal/dependency"
 	"github.com/croncontrol/croncontrol/internal/executor"
 	exechttp "github.com/croncontrol/croncontrol/internal/executor/http"
+	execk8s "github.com/croncontrol/croncontrol/internal/executor/k8s"
+	execssh "github.com/croncontrol/croncontrol/internal/executor/ssh"
+	execssm "github.com/croncontrol/croncontrol/internal/executor/ssm"
 	"github.com/croncontrol/croncontrol/internal/frontend"
 	"github.com/croncontrol/croncontrol/internal/handler"
 	"github.com/croncontrol/croncontrol/internal/logging"
@@ -33,14 +36,14 @@ import (
 	logos "github.com/croncontrol/croncontrol/internal/logging/opensearch"
 	"github.com/croncontrol/croncontrol/internal/metrics"
 	"github.com/croncontrol/croncontrol/internal/monitor"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/croncontrol/croncontrol/internal/notifier"
+	orchestramonitor "github.com/croncontrol/croncontrol/internal/orchestra"
 	"github.com/croncontrol/croncontrol/internal/planner"
 	"github.com/croncontrol/croncontrol/internal/queue"
 	"github.com/croncontrol/croncontrol/internal/recovery"
-	orchestramonitor "github.com/croncontrol/croncontrol/internal/orchestra"
 	"github.com/croncontrol/croncontrol/internal/storage"
 	"github.com/croncontrol/croncontrol/internal/worker"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -132,7 +135,64 @@ func run() error {
 
 	// Execution method registry
 	registry := executor.NewRegistry()
-	registry.Register("http", exechttp.New(5 * 1024 * 1024)) // 5MB max response
+	registry.Register("http", exechttp.New(5*1024*1024)) // 5MB max response
+	registry.Register("ssh", execssh.New(func(ctx context.Context, credentialID string) ([]byte, string, int, bool, error) {
+		var privateKey []byte
+		var username *string
+		var port *int32
+		var strict bool
+		err := pool.QueryRow(ctx, `
+			SELECT private_key_enc, username, port, strict_host_key
+			FROM ssh_credentials
+			WHERE id = $1
+		`, credentialID).Scan(&privateKey, &username, &port, &strict)
+		if err != nil {
+			return nil, "", 0, false, err
+		}
+		user := ""
+		if username != nil {
+			user = *username
+		}
+		p := 22
+		if port != nil && *port > 0 {
+			p = int(*port)
+		}
+		return privateKey, user, p, strict, nil
+	}))
+	registry.Register("ssm", execssm.New(func(ctx context.Context, profileID string) (string, string, error) {
+		var region string
+		var roleARN *string
+		err := pool.QueryRow(ctx, `
+			SELECT region, role_arn
+			FROM ssm_profiles
+			WHERE id = $1
+		`, profileID).Scan(&region, &roleARN)
+		if err != nil {
+			return "", "", err
+		}
+		role := ""
+		if roleARN != nil {
+			role = *roleARN
+		}
+		return region, role, nil
+	}))
+	registry.Register("k8s", execk8s.New(func(ctx context.Context, clusterID string) ([]byte, string, error) {
+		var kubeconfig []byte
+		var defaultNamespace *string
+		err := pool.QueryRow(ctx, `
+			SELECT kubeconfig_enc, default_namespace
+			FROM k8s_clusters
+			WHERE id = $1
+		`, clusterID).Scan(&kubeconfig, &defaultNamespace)
+		if err != nil {
+			return nil, "", err
+		}
+		ns := ""
+		if defaultNamespace != nil {
+			ns = *defaultNamespace
+		}
+		return kubeconfig, ns, nil
+	}))
 
 	// Components
 	depResolver := dependency.New(queries)
@@ -175,9 +235,96 @@ func run() error {
 		// non-fatal: continue starting
 	}
 
+	baseURL := cfg.SaaS.BaseURL
+	if baseURL == "" {
+		baseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+	}
+
 	// Wire dependency resolver into executor
 	orchestrator.SetOnRunTerminal(func(ctx context.Context, run db.Run, proc db.Process) {
 		depResolver.Evaluate(ctx, run)
+	})
+	orchestrator.SetWorkerDispatch(func(ctx context.Context, run db.Run, proc db.Process) error {
+		var methodConfig map[string]any
+		if len(proc.MethodConfig) > 0 {
+			_ = json.Unmarshal(proc.MethodConfig, &methodConfig)
+		}
+
+		var environment map[string]any
+		if len(proc.Environment) > 0 {
+			_ = json.Unmarshal(proc.Environment, &environment)
+		}
+
+		workerID, err := workerDisp.Dispatch(ctx, proc.WorkspaceID, worker.Task{
+			ID:              run.ID,
+			Type:            "run",
+			WorkspaceID:     proc.WorkspaceID,
+			ExecutionMethod: proc.ExecutionMethod,
+			MethodConfig:    methodConfig,
+			Environment:     environment,
+			APIBaseURL:      baseURL,
+		}, proc.WorkerID, proc.WorkerLabels)
+		if err != nil {
+			return err
+		}
+
+		if workerID == "" {
+			return queries.UpdateRunState(ctx, db.UpdateRunStateParams{
+				ID:            run.ID,
+				State:         "waiting_for_worker",
+				WaitingReason: strPtr("Waiting for available worker"),
+			})
+		}
+
+		return queries.UpdateRunState(ctx, db.UpdateRunStateParams{
+			ID:            run.ID,
+			State:         "waiting_for_worker",
+			WaitingReason: strPtr("Assigned to worker " + workerID),
+			WorkerID:      &workerID,
+		})
+	})
+	queueProc.SetWorkerDispatch(func(ctx context.Context, job db.ClaimPendingJobsRow) error {
+		methodConfig := queue.BuildJobMethodConfig(job.QueueMethodConfig, job.Payload)
+
+		selectedWorkerID, err := workerDisp.Dispatch(ctx, job.WorkspaceID, worker.Task{
+			ID:              job.ID,
+			Type:            "job",
+			WorkspaceID:     job.WorkspaceID,
+			ExecutionMethod: job.ExecutionMethod,
+			MethodConfig:    methodConfig,
+			APIBaseURL:      baseURL,
+		}, firstNonEmptyPtr(job.WorkerIDOverride, job.QueueWorkerID), job.WorkerLabelsOverride)
+		if err != nil {
+			return err
+		}
+
+		if selectedWorkerID == "" {
+			return queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+				ID:            job.ID,
+				State:         "waiting_for_worker",
+				WaitingReason: strPtr("Waiting for available worker"),
+			})
+		}
+
+		attempt := job.Attempt + 1
+		if attempt == 1 {
+			snapshot, _ := json.Marshal(map[string]any{
+				"method_config":    methodConfig,
+				"execution_method": job.ExecutionMethod,
+			})
+			_ = queries.SnapshotJobConfig(ctx, db.SnapshotJobConfigParams{
+				ID:              job.ID,
+				EffectiveConfig: snapshot,
+			})
+		}
+
+		return queries.UpdateJobState(ctx, db.UpdateJobStateParams{
+			ID:            job.ID,
+			State:         "waiting_for_worker",
+			Attempt:       &attempt,
+			WaitingReason: strPtr("Assigned to worker " + selectedWorkerID),
+			WorkerID:      &selectedWorkerID,
+		})
 	})
 
 	// Metrics collector
@@ -195,13 +342,9 @@ func run() error {
 	orchMonitor.Start(ctx)
 
 	// Handler service
-	svc := handler.NewService(queries, pool, orchestrator, depResolver, webhookNotifier)
+	svc := handler.NewService(queries, pool, orchestrator, depResolver, webhookNotifier, workerDisp)
 
 	// Configure Google OAuth if credentials are set
-	baseURL := cfg.SaaS.BaseURL
-	if baseURL == "" {
-		baseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
-	}
 	googleAuth := auth.NewGoogleAuth(auth.GoogleOAuthConfig{
 		ClientID:     cfg.Auth.GoogleClientID,
 		ClientSecret: cfg.Auth.GoogleClientSecret,
@@ -313,11 +456,15 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 	// Auth middleware
 	apiKeyAuth := auth.NewAPIKeyAuth(queries)
 	skipPaths := map[string]bool{
-		"/health":              true,
-		"/api/v1/heartbeat":    true,
-		"/api/v1/register":     true,
-		"/api/v1/register/verify": true,
-		"/api/v1/login":        true,
+		"/health":                      true,
+		"/api/v1/heartbeat":            true,
+		"/api/v1/workers/poll":         true,
+		"/api/v1/workers/result":       true,
+		"/api/v1/workers/heartbeat":    true,
+		"/api/v1/workers/control-poll": true,
+		"/api/v1/register":             true,
+		"/api/v1/register/verify":      true,
+		"/api/v1/login":                true,
 	}
 
 	// API v1
@@ -331,6 +478,10 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 		r.Post("/login", svc.Login)
 		r.Post("/heartbeat", svc.Heartbeat)
 		r.Post("/workers/enroll", svc.EnrollWorker)
+		r.Get("/workers/poll", svc.WorkerPoll)
+		r.Post("/workers/result", svc.WorkerResult)
+		r.Post("/workers/heartbeat", svc.WorkerHeartbeat)
+		r.Post("/workers/control-poll", svc.WorkerControlPoll)
 		r.Post("/infra/servers/{id}/ready", svc.ServerReadyCallback)
 		r.Post("/chat/simulate", svc.ChatSimulate)
 		r.Post("/register/verify", svc.VerifyEmail)
@@ -399,6 +550,7 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			r.Get("/queues", svc.ListQueues)
 			r.Post("/queues", svc.CreateQueue)
 			r.Get("/queues/{id}", svc.GetQueue)
+			r.Put("/queues/{id}", svc.UpdateQueue)
 
 			// Jobs
 			r.Get("/jobs", svc.ListJobs)
@@ -411,6 +563,8 @@ func buildRouter(cfg *config.Config, pool *pgxpool.Pool, queries *db.Queries, sv
 			// Workers
 			r.Get("/workers", svc.ListWorkers)
 			r.Post("/workers", svc.CreateWorker)
+			r.Get("/workers/{id}", svc.GetWorker)
+			r.Put("/workers/{id}", svc.UpdateWorker)
 			r.Delete("/workers/{id}", svc.DeleteWorker)
 
 			// API Keys
@@ -477,6 +631,17 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+func strPtr(s string) *string { return &s }
+
+func firstNonEmptyPtr(values ...*string) *string {
+	for _, v := range values {
+		if v != nil && *v != "" {
+			return v
+		}
+	}
+	return nil
 }
 
 func splitOnce(s, sep string) [2]string {

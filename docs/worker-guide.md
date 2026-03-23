@@ -29,6 +29,7 @@ Control Plane (SaaS/hosted)          Customer Network
 - **Outbound only**: The worker initiates all connections. No inbound ports required.
 - **One workspace**: Each worker authenticates to exactly one workspace.
 - **Long polling**: The worker polls `GET /api/v1/workers/poll` for tasks.
+- **Control polling**: The worker polls `POST /api/v1/workers/control-poll` every 5 seconds for commands affecting active tasks.
 - **Heartbeat**: Reports liveness every 15 seconds to `POST /api/v1/workers/heartbeat`.
 - **Execution methods**: Supports HTTP and SSH from the worker's local network. SSM and K8s support depends on the worker having the necessary AWS/K8s credentials.
 
@@ -108,7 +109,7 @@ Recovery: returns to `online` after 3 consecutive healthy heartbeats.
 ## Concurrency
 
 - Each worker has a `max_concurrency` limit (default: 5).
-- The dispatcher checks `CountRunningByWorker` before dispatching.
+- The dispatcher checks active run and job load before dispatching.
 - If a worker is at capacity, the task is not dispatched and waits for availability.
 
 ## Failure Handling
@@ -120,12 +121,22 @@ Recovery: returns to `online` after 3 consecutive healthy heartbeats.
 | No worker available | Run transitions to `waiting_for_worker` with a reason recorded |
 | Worker disabled by admin | Stops receiving new tasks. Running tasks continue to completion |
 
+## Cancellation Model
+
+- Pending work may become `cancelled` before execution starts.
+- Active work transitions to `kill_requested` first.
+- The worker receives `kill` commands through `control-poll`.
+- The worker applies local `context` cancellation first, then method-specific `Kill()` when supported.
+- Final state becomes `killed` only after the execution plane confirms stop.
+
 ## Task Execution
 
 The worker uses the same execution method implementations as the control plane:
 
-- **HTTP**: Sends requests to URLs reachable from the worker's network
+- **HTTP**: Sends requests to URLs reachable from the worker's network and supports `sync`, `async_blind`, and `async_tracked`
 - **SSH**: Connects to hosts accessible from the worker
+- **SSM**: Uses AWS credentials or role access available on the worker
+- **K8s**: Uses cluster access available on the worker
 
 Environment variables injected into every task:
 

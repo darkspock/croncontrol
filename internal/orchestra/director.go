@@ -107,9 +107,13 @@ func (d *AIDirector) HandleEvent(ctx context.Context, orch db.Orchestra, event E
 	log := slog.With("orchestra", orch.Name, "provider", d.provider.Name())
 
 	// Build context for the AI
-	movements, _ := d.queries.ListMovementsByOrchestra(ctx, orch.ID)
+	movements, _ := d.queries.ListMovementsByOrchestra(ctx, &orch.ID)
 	processes, _ := d.queries.ListProcesses(ctx, db.ListProcessesParams{WorkspaceID: orch.WorkspaceID, Limit: 100, Offset: 0})
-	chat, _ := d.queries.ListChatMessagesAll(ctx, orch.ID, 50, 0)
+	chat, _ := d.queries.ListChatMessagesAll(ctx, db.ListChatMessagesAllParams{
+		OrchestraID: orch.ID,
+		Limit:       50,
+		Offset:      0,
+	})
 
 	scoreJSON, _ := json.Marshal(map[string]any{
 		"orchestra":   orch.Name,
@@ -193,8 +197,8 @@ func (d *AIDirector) executeTool(ctx context.Context, orch db.Orchestra, event E
 		message, _ := tc.Input["message"].(string)
 		choices, _ := json.Marshal(tc.Input["choices"])
 		config, _ := json.Marshal(map[string]any{"message": message, "choices": json.RawMessage(choices)})
-		d.queries.SetRunChoiceConfig(ctx, event.RunID, config)
-		d.queries.UpdateOrchestraState(ctx, orch.ID, "waiting_for_choice")
+		d.queries.SetRunChoiceConfig(ctx, db.SetRunChoiceConfigParams{ID: event.RunID, ChoiceConfig: config})
+		d.queries.UpdateOrchestraState(ctx, db.UpdateOrchestraStateParams{ID: orch.ID, State: "waiting_for_choice"})
 		d.postChat(ctx, orch.ID, message, "choice")
 		return nil
 
@@ -205,7 +209,7 @@ func (d *AIDirector) executeTool(ctx context.Context, orch db.Orchestra, event E
 
 	case "finish_orchestra":
 		summary, _ := tc.Input["summary"].(string)
-		d.queries.FinishOrchestra(ctx, orch.ID, &summary)
+		d.queries.FinishOrchestra(ctx, db.FinishOrchestraParams{ID: orch.ID, Summary: &summary})
 		d.postChat(ctx, orch.ID, "Orchestra finished: "+summary, "status")
 		return nil
 
@@ -259,8 +263,8 @@ func (d *AIDirector) fallbackToHuman(ctx context.Context, orch db.Orchestra, eve
 		"message": "AI Director is unavailable. Please choose the next action.",
 		"choices": choices,
 	})
-	d.queries.SetRunChoiceConfig(ctx, event.RunID, config)
-	d.queries.UpdateOrchestraState(ctx, orch.ID, "waiting_for_choice")
+	d.queries.SetRunChoiceConfig(ctx, db.SetRunChoiceConfigParams{ID: event.RunID, ChoiceConfig: config})
+	d.queries.UpdateOrchestraState(ctx, db.UpdateOrchestraStateParams{ID: orch.ID, State: "waiting_for_choice"})
 }
 
 func (d *AIDirector) postChat(ctx context.Context, orchestraID, content, msgType string) {

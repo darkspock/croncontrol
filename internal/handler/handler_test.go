@@ -33,7 +33,7 @@ func setupTestRouter(t *testing.T) (*chi.Mux, *db.Queries) {
 	t.Cleanup(func() { pool.Close() })
 
 	queries := db.New(pool)
-	svc := NewService(queries, pool, nil, nil, nil)
+	svc := NewService(queries, pool, nil, nil, nil, nil)
 
 	r := chi.NewRouter()
 	apiKeyAuth := auth.NewAPIKeyAuth(queries)

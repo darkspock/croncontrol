@@ -376,11 +376,11 @@ paths:
       - $ref: "#/components/parameters/ResourceId"
     post:
       operationId: killRun
-      summary: Kill a running execution (operator)
+      summary: Request stop for an active execution (operator)
       tags: [Runs]
       responses:
         "200":
-          description: Kill requested
+          description: Kill requested. The run may stay in `kill_requested` until the executor confirms remote stop and moves it to `killed`.
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -389,11 +389,11 @@ paths:
       - $ref: "#/components/parameters/ResourceId"
     post:
       operationId: cancelRun
-      summary: Cancel a pending/queued run (operator)
+      summary: Cancel a run or request stop if already active (operator)
       tags: [Runs]
       responses:
         "200":
-          description: Cancelled
+          description: If the run has not started, it becomes `cancelled`. If already active, the API transitions it to `kill_requested` and the terminal state becomes `killed` only after confirmation.
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -612,11 +612,11 @@ paths:
       - $ref: "#/components/parameters/ResourceId"
     post:
       operationId: cancelJob
-      summary: Cancel a pending/retrying job (operator)
+      summary: Cancel a job or request stop if already active (operator)
       tags: [Jobs]
       responses:
         "200":
-          description: Cancelled
+          description: If the job has not started, it becomes `cancelled`. If already active, the API transitions it to `kill_requested` and the terminal state becomes `killed` only after confirmation.
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1164,8 +1164,29 @@ components:
         runtime:
           type: string
           enum: [direct, worker]
+        worker_id:
+          type: string
+        worker_labels:
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         method_config:
           type: object
+          description: Generic method configuration. For HTTP this supports sync, async_blind, and async_tracked dispatch.
+          example:
+            url: https://api.example.com/jobs
+            method: POST
+            dispatch_mode: async_tracked
+            accepted_status_codes: [200, 201, 202]
+            job_id_field: data.id
+            status_url_template: https://api.example.com/jobs/{{job.id}}
+            cancel_url_template: https://api.example.com/jobs/{{job.id}}/cancel
+            status_field: data.status
+            running_values: [queued, running]
+            success_values: [completed, succeeded]
+            failed_values: [failed, error]
         max_attempts:
           type: integer
         retry_backoff:
@@ -1228,6 +1249,19 @@ components:
           default: direct
         method_config:
           type: object
+          description: Method-specific execution settings. HTTP supports dispatch_mode, accepted_status_codes, tracked polling URLs, and status mappings.
+          example:
+            url: https://api.example.com/jobs
+            method: POST
+            dispatch_mode: async_tracked
+            accepted_status_codes: [200, 201, 202]
+            job_id_field: data.id
+            status_url_template: https://api.example.com/jobs/{{job.id}}
+            cancel_url_template: https://api.example.com/jobs/{{job.id}}/cancel
+            status_field: data.status
+            running_values: [queued, running]
+            success_values: [completed, succeeded]
+            failed_values: [failed, error]
         max_attempts:
           type: integer
           default: 1
@@ -1264,6 +1298,12 @@ components:
           type: string
         worker_id:
           type: string
+        worker_labels:
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         depends_on_process_id:
           type: string
         dependency_type:
@@ -1294,6 +1334,12 @@ components:
           format: date-time
         state:
           type: string
+          enum: [pending, queued, waiting_for_worker, running, retrying, kill_requested, completed, failed, killed, cancelled, skipped]
+          description: |
+            Lifecycle state for a run.
+            `cancelled` means execution never started.
+            `kill_requested` means stop has been requested for an active execution but remote confirmation has not arrived yet.
+            `killed` is terminal and only set after the execution plane confirms the stop.
         origin:
           type: string
         attempt:
@@ -1419,10 +1465,20 @@ components:
           type: string
         runtime:
           type: string
+        worker_id:
+          type: string
+        worker_labels:
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         concurrency:
           type: integer
         max_attempts:
           type: integer
+        retry_backoff:
+          type: string
         enabled:
           type: boolean
         tags:
@@ -1486,6 +1542,19 @@ components:
           default: direct
         method_config:
           type: object
+          description: Method-specific execution settings. HTTP supports dispatch_mode, accepted_status_codes, tracked polling URLs, and status mappings.
+          example:
+            url: https://api.example.com/jobs
+            method: POST
+            dispatch_mode: async_tracked
+            accepted_status_codes: [200, 201, 202]
+            job_id_field: data.id
+            status_url_template: https://api.example.com/jobs/{{job.id}}
+            cancel_url_template: https://api.example.com/jobs/{{job.id}}/cancel
+            status_field: data.status
+            running_values: [queued, running]
+            success_values: [completed, succeeded]
+            failed_values: [failed, error]
         concurrency:
           type: integer
           default: 1
@@ -1498,6 +1567,14 @@ components:
         job_timeout:
           type: string
           default: "5m"
+        worker_id:
+          type: string
+        worker_labels:
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         tags:
           type: array
           items:
@@ -1518,6 +1595,12 @@ components:
           type: string
         state:
           type: string
+          enum: [pending, waiting_for_worker, running, retrying, kill_requested, completed, failed, killed, cancelled]
+          description: |
+            Lifecycle state for a job.
+            `cancelled` means execution never started.
+            `kill_requested` means stop has been requested for an active execution but remote confirmation has not arrived yet.
+            `killed` is terminal and only set after the execution plane confirms the stop.
         priority:
           type: integer
         attempt:
@@ -1665,7 +1748,11 @@ components:
         name:
           type: string
         labels:
-          type: object
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         max_concurrency:
           type: integer
           default: 5
@@ -1673,8 +1760,16 @@ components:
     UpdateWorkerRequest:
       type: object
       properties:
+        name:
+          type: string
+        max_concurrency:
+          type: integer
         labels:
-          type: object
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
         enabled:
           type: boolean
 

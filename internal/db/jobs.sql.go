@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const appendJobAttemptResponseChunk = `-- name: AppendJobAttemptResponseChunk :exec
+UPDATE job_attempts
+SET response_body = COALESCE(response_body, '') || $2
+WHERE id = $1
+`
+
+type AppendJobAttemptResponseChunkParams struct {
+	ID           string  `json:"id"`
+	ResponseBody *string `json:"response_body"`
+}
+
+func (q *Queries) AppendJobAttemptResponseChunk(ctx context.Context, arg AppendJobAttemptResponseChunkParams) error {
+	_, err := q.db.Exec(ctx, appendJobAttemptResponseChunk, arg.ID, arg.ResponseBody)
+	return err
+}
+
 const cancelJob = `-- name: CancelJob :exec
 UPDATE jobs SET state = 'cancelled', cancel_reason = $2, updated_at = now()
 WHERE id = $1
@@ -43,7 +59,7 @@ func (q *Queries) CheckIdempotencyKey(ctx context.Context, arg CheckIdempotencyK
 }
 
 const claimPendingJobs = `-- name: ClaimPendingJobs :many
-SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, q.execution_method, q.method_config AS queue_method_config,
+SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, j.execution_handle, j.stdout_offset, j.stderr_offset, q.execution_method, q.method_config AS queue_method_config,
        q.max_attempts AS queue_max_attempts, q.retry_backoff AS queue_retry_backoff,
        q.job_timeout, q.max_response_size, q.concurrency AS queue_concurrency,
        q.runtime AS queue_runtime, q.worker_id AS queue_worker_id
@@ -90,6 +106,9 @@ type ClaimPendingJobsRow struct {
 	DurationMs           *int64             `json:"duration_ms"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ExecutionHandle      []byte             `json:"execution_handle"`
+	StdoutOffset         int64              `json:"stdout_offset"`
+	StderrOffset         int64              `json:"stderr_offset"`
 	ExecutionMethod      string             `json:"execution_method"`
 	QueueMethodConfig    []byte             `json:"queue_method_config"`
 	QueueMaxAttempts     int32              `json:"queue_max_attempts"`
@@ -139,6 +158,9 @@ func (q *Queries) ClaimPendingJobs(ctx context.Context, limit int32) ([]ClaimPen
 			&i.DurationMs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.ExecutionMethod,
 			&i.QueueMethodConfig,
 			&i.QueueMaxAttempts,
@@ -157,6 +179,20 @@ func (q *Queries) ClaimPendingJobs(ctx context.Context, limit int32) ([]ClaimPen
 		return nil, err
 	}
 	return items, nil
+}
+
+const clearJobExecutionHandle = `-- name: ClearJobExecutionHandle :exec
+UPDATE jobs SET
+    execution_handle = NULL,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) ClearJobExecutionHandle(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, clearJobExecutionHandle, id)
+	return err
 }
 
 const countJobs = `-- name: CountJobs :one
@@ -211,7 +247,7 @@ INSERT INTO jobs (
     $12, $13, $14,
     $15, $16, $17
 )
-RETURNING id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at
+RETURNING id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at, execution_handle, stdout_offset, stderr_offset
 `
 
 type CreateJobParams struct {
@@ -284,6 +320,9 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.DurationMs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
@@ -300,7 +339,7 @@ SELECT $2, j.workspace_id, j.queue_id,
     j.max_attempts, j.retry_backoff, j.reference, j.id,
     $3, $4, j.tags
 FROM jobs j WHERE j.id = $1
-RETURNING id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at
+RETURNING id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at, execution_handle, stdout_offset, stderr_offset
 `
 
 type CreateReplayJobParams struct {
@@ -351,12 +390,15 @@ func (q *Queries) CreateReplayJob(ctx context.Context, arg CreateReplayJobParams
 		&i.DurationMs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at FROM jobs WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at, execution_handle, stdout_offset, stderr_offset FROM jobs WHERE id = $1 AND workspace_id = $2
 `
 
 type GetJobParams struct {
@@ -396,12 +438,34 @@ func (q *Queries) GetJob(ctx context.Context, arg GetJobParams) (Job, error) {
 		&i.DurationMs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 	)
 	return i, err
 }
 
+const getJobExecutionHandle = `-- name: GetJobExecutionHandle :one
+SELECT execution_handle, stdout_offset, stderr_offset
+FROM jobs
+WHERE id = $1 AND execution_handle IS NOT NULL
+`
+
+type GetJobExecutionHandleRow struct {
+	ExecutionHandle []byte `json:"execution_handle"`
+	StdoutOffset    int64  `json:"stdout_offset"`
+	StderrOffset    int64  `json:"stderr_offset"`
+}
+
+func (q *Queries) GetJobExecutionHandle(ctx context.Context, id string) (GetJobExecutionHandleRow, error) {
+	row := q.db.QueryRow(ctx, getJobExecutionHandle, id)
+	var i GetJobExecutionHandleRow
+	err := row.Scan(&i.ExecutionHandle, &i.StdoutOffset, &i.StderrOffset)
+	return i, err
+}
+
 const getJobWithQueue = `-- name: GetJobWithQueue :one
-SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, q.name AS queue_name, q.execution_method, q.method_config AS queue_method_config,
+SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, j.execution_handle, j.stdout_offset, j.stderr_offset, q.name AS queue_name, q.execution_method, q.method_config AS queue_method_config,
        q.max_attempts AS queue_max_attempts, q.retry_backoff AS queue_retry_backoff,
        q.job_timeout, q.max_response_size, q.concurrency AS queue_concurrency
 FROM jobs j
@@ -443,6 +507,9 @@ type GetJobWithQueueRow struct {
 	DurationMs           *int64             `json:"duration_ms"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ExecutionHandle      []byte             `json:"execution_handle"`
+	StdoutOffset         int64              `json:"stdout_offset"`
+	StderrOffset         int64              `json:"stderr_offset"`
 	QueueName            string             `json:"queue_name"`
 	ExecutionMethod      string             `json:"execution_method"`
 	QueueMethodConfig    []byte             `json:"queue_method_config"`
@@ -485,6 +552,9 @@ func (q *Queries) GetJobWithQueue(ctx context.Context, arg GetJobWithQueueParams
 		&i.DurationMs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExecutionHandle,
+		&i.StdoutOffset,
+		&i.StderrOffset,
 		&i.QueueName,
 		&i.ExecutionMethod,
 		&i.QueueMethodConfig,
@@ -497,8 +567,89 @@ func (q *Queries) GetJobWithQueue(ctx context.Context, arg GetJobWithQueueParams
 	return i, err
 }
 
+const listActiveAsyncJobs = `-- name: ListActiveAsyncJobs :many
+SELECT
+    j.id,
+    j.workspace_id,
+    j.queue_id,
+    j.attempt,
+    j.state,
+    COALESCE(ja.id, '') AS attempt_id,
+    ja.started_at,
+    j.execution_handle,
+    j.stdout_offset,
+    j.stderr_offset,
+    q.execution_method,
+    COALESCE(j.max_attempts, q.max_attempts) AS max_attempts,
+    COALESCE(j.retry_backoff, q.retry_backoff) AS retry_backoff,
+    q.max_response_size
+FROM jobs j
+JOIN queues q ON q.id = j.queue_id
+LEFT JOIN LATERAL (
+    SELECT id, started_at
+    FROM job_attempts
+    WHERE job_id = j.id AND finished_at IS NULL
+    ORDER BY attempt_number DESC
+    LIMIT 1
+) ja ON true
+WHERE j.state IN ('running', 'kill_requested')
+  AND j.execution_handle IS NOT NULL
+`
+
+type ListActiveAsyncJobsRow struct {
+	ID              string             `json:"id"`
+	WorkspaceID     string             `json:"workspace_id"`
+	QueueID         string             `json:"queue_id"`
+	Attempt         int32              `json:"attempt"`
+	State           string             `json:"state"`
+	AttemptID       string             `json:"attempt_id"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	ExecutionHandle []byte             `json:"execution_handle"`
+	StdoutOffset    int64              `json:"stdout_offset"`
+	StderrOffset    int64              `json:"stderr_offset"`
+	ExecutionMethod string             `json:"execution_method"`
+	MaxAttempts     int32              `json:"max_attempts"`
+	RetryBackoff    string             `json:"retry_backoff"`
+	MaxResponseSize int32              `json:"max_response_size"`
+}
+
+func (q *Queries) ListActiveAsyncJobs(ctx context.Context) ([]ListActiveAsyncJobsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveAsyncJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveAsyncJobsRow{}
+	for rows.Next() {
+		var i ListActiveAsyncJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.QueueID,
+			&i.Attempt,
+			&i.State,
+			&i.AttemptID,
+			&i.StartedAt,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
+			&i.ExecutionMethod,
+			&i.MaxAttempts,
+			&i.RetryBackoff,
+			&i.MaxResponseSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExpiredPendingJobs = `-- name: ListExpiredPendingJobs :many
-SELECT id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at FROM jobs
+SELECT id, workspace_id, queue_id, runtime_override, worker_id_override, worker_labels_override, payload, priority, max_attempts, attempt, retry_backoff, state, scheduled_at, expires_at, next_attempt_at, reference, idempotency_key, replayed_from_job_id, cancel_reason, waiting_reason, actor_type, actor_id, effective_config, tags, worker_id, duration_ms, created_at, updated_at, execution_handle, stdout_offset, stderr_offset FROM jobs
 WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= now()
 LIMIT $1
 FOR UPDATE SKIP LOCKED
@@ -542,6 +693,9 @@ func (q *Queries) ListExpiredPendingJobs(ctx context.Context, limit int32) ([]Jo
 			&i.DurationMs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 		); err != nil {
 			return nil, err
 		}
@@ -554,7 +708,7 @@ func (q *Queries) ListExpiredPendingJobs(ctx context.Context, limit int32) ([]Jo
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, q.name AS queue_name
+SELECT j.id, j.workspace_id, j.queue_id, j.runtime_override, j.worker_id_override, j.worker_labels_override, j.payload, j.priority, j.max_attempts, j.attempt, j.retry_backoff, j.state, j.scheduled_at, j.expires_at, j.next_attempt_at, j.reference, j.idempotency_key, j.replayed_from_job_id, j.cancel_reason, j.waiting_reason, j.actor_type, j.actor_id, j.effective_config, j.tags, j.worker_id, j.duration_ms, j.created_at, j.updated_at, j.execution_handle, j.stdout_offset, j.stderr_offset, q.name AS queue_name
 FROM jobs j
 JOIN queues q ON q.id = j.queue_id
 WHERE j.workspace_id = $1
@@ -603,6 +757,9 @@ type ListJobsRow struct {
 	DurationMs           *int64             `json:"duration_ms"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ExecutionHandle      []byte             `json:"execution_handle"`
+	StdoutOffset         int64              `json:"stdout_offset"`
+	StderrOffset         int64              `json:"stderr_offset"`
 	QueueName            string             `json:"queue_name"`
 }
 
@@ -651,6 +808,9 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]ListJobsR
 			&i.DurationMs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExecutionHandle,
+			&i.StdoutOffset,
+			&i.StderrOffset,
 			&i.QueueName,
 		); err != nil {
 			return nil, err
@@ -661,6 +821,52 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]ListJobsR
 		return nil, err
 	}
 	return items, nil
+}
+
+const listKillRequestedAsyncJobIDs = `-- name: ListKillRequestedAsyncJobIDs :many
+SELECT id
+FROM jobs
+WHERE state = 'kill_requested'
+  AND execution_handle IS NOT NULL
+`
+
+func (q *Queries) ListKillRequestedAsyncJobIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listKillRequestedAsyncJobIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const saveJobExecutionHandle = `-- name: SaveJobExecutionHandle :exec
+UPDATE jobs SET
+    execution_handle = $2,
+    stdout_offset = 0,
+    stderr_offset = 0,
+    updated_at = now()
+WHERE id = $1
+`
+
+type SaveJobExecutionHandleParams struct {
+	ID              string `json:"id"`
+	ExecutionHandle []byte `json:"execution_handle"`
+}
+
+func (q *Queries) SaveJobExecutionHandle(ctx context.Context, arg SaveJobExecutionHandleParams) error {
+	_, err := q.db.Exec(ctx, saveJobExecutionHandle, arg.ID, arg.ExecutionHandle)
+	return err
 }
 
 const snapshotJobConfig = `-- name: SnapshotJobConfig :exec
@@ -674,6 +880,25 @@ type SnapshotJobConfigParams struct {
 
 func (q *Queries) SnapshotJobConfig(ctx context.Context, arg SnapshotJobConfigParams) error {
 	_, err := q.db.Exec(ctx, snapshotJobConfig, arg.ID, arg.EffectiveConfig)
+	return err
+}
+
+const updateJobOffsets = `-- name: UpdateJobOffsets :exec
+UPDATE jobs SET
+    stdout_offset = $2,
+    stderr_offset = $3,
+    updated_at = now()
+WHERE id = $1
+`
+
+type UpdateJobOffsetsParams struct {
+	ID           string `json:"id"`
+	StdoutOffset int64  `json:"stdout_offset"`
+	StderrOffset int64  `json:"stderr_offset"`
+}
+
+func (q *Queries) UpdateJobOffsets(ctx context.Context, arg UpdateJobOffsetsParams) error {
+	_, err := q.db.Exec(ctx, updateJobOffsets, arg.ID, arg.StdoutOffset, arg.StderrOffset)
 	return err
 }
 

@@ -6,7 +6,7 @@ import { ORIGIN_LABELS } from '@/lib/constants'
 import { useRuns } from '@/hooks/use-api'
 import { formatDuration } from '@/lib/utils'
 
-const STATE_OPTIONS = ['', 'pending', 'running', 'completed', 'failed', 'hung', 'killed', 'retrying', 'skipped', 'cancelled', 'paused']
+const STATE_OPTIONS = ['', 'pending', 'queued', 'waiting_for_worker', 'running', 'kill_requested', 'completed', 'failed', 'hung', 'killed', 'retrying', 'skipped', 'cancelled', 'paused']
 
 export function RunList() {
   const [stateFilter, setStateFilter] = useState('')
