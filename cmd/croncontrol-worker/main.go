@@ -28,7 +28,9 @@ import (
 
 	"github.com/croncontrol/croncontrol/internal/executor"
 	exechttp "github.com/croncontrol/croncontrol/internal/executor/http"
+	execk8s "github.com/croncontrol/croncontrol/internal/executor/k8s"
 	execssh "github.com/croncontrol/croncontrol/internal/executor/ssh"
+	execssm "github.com/croncontrol/croncontrol/internal/executor/ssm"
 )
 
 var (
@@ -117,7 +119,7 @@ func run() error {
 
 	// Build execution method registry
 	registry := buildMethodRegistry()
-	slog.Info("execution methods registered", "methods", []string{"http", "ssh"})
+	slog.Info("execution methods registered", "methods", []string{"http", "ssh", "ssm", "k8s"})
 
 	var activeTasks sync.Map
 
@@ -198,17 +200,35 @@ func buildMethodRegistry() *executor.Registry {
 	// SSH method — available when credentials are provided via method_config.
 	// On the worker side, SSH credentials come inline in the task's method_config
 	// (private_key, username, port) rather than via DB credential loader.
-	reg.RegisterBlocking("ssh", execssh.New(workerSSHCredentialLoader))
+	reg.RegisterBlocking("ssh", execssh.New(workerCredentialNotAvailable))
+
+	// SSM method — credentials (region, role_arn) come inline in method_config.
+	// The worker uses local AWS credentials/role from its environment.
+	reg.Register("ssm", execssm.New(workerSSMProfileLoader))
+
+	// K8s method — kubeconfig comes inline in method_config or from local ~/.kube/config.
+	reg.Register("k8s", execk8s.New(workerK8sClusterLoader))
 
 	return reg
 }
 
-// workerSSHCredentialLoader loads SSH credentials from the task's method_config.
-// On the worker side, the control plane injects decrypted credentials into the task payload.
-func workerSSHCredentialLoader(_ context.Context, _ string) ([]byte, string, int, bool, error) {
-	// Worker-side SSH uses credentials embedded in the method_config by the control plane.
-	// This loader is a fallback — actual credential data is injected by the dispatcher.
-	return nil, "", 0, true, fmt.Errorf("ssh credentials must be provided in method_config for worker execution")
+// workerCredentialNotAvailable is a fallback loader — actual credentials are injected by the dispatcher.
+func workerCredentialNotAvailable(_ context.Context, _ string) ([]byte, string, int, bool, error) {
+	return nil, "", 0, true, fmt.Errorf("credentials must be provided in method_config for worker execution")
+}
+
+// workerSSMProfileLoader loads SSM profile from method_config (injected by dispatcher).
+func workerSSMProfileLoader(_ context.Context, _ string) (string, string, error) {
+	// Worker-side SSM uses the local AWS credentials and region from environment.
+	// Profile data is injected by the control plane into method_config.
+	return "", "", fmt.Errorf("ssm profile must be provided in method_config for worker execution")
+}
+
+// workerK8sClusterLoader loads K8s config from method_config (injected by dispatcher).
+func workerK8sClusterLoader(_ context.Context, _ string) ([]byte, string, error) {
+	// Worker-side K8s uses local kubeconfig or in-cluster config.
+	// Cluster data is injected by the control plane into method_config.
+	return nil, "", fmt.Errorf("k8s cluster config must be provided in method_config for worker execution")
 }
 
 func executeTask(ctx context.Context, task *Task, registry *executor.Registry, activeTasks *sync.Map) TaskResult {

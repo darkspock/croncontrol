@@ -229,13 +229,19 @@ func (d *Dispatcher) ProcessResult(ctx context.Context, result TaskResult) error
 	// Determine if this is a run or job based on ID prefix
 	taskID := result.TaskID
 	if len(taskID) > 4 && taskID[:4] == "run_" {
+		// Determine terminal state from the actual result, not just DB state.
+		// If the task completed/failed before the kill took effect, honor the real outcome.
 		state := "completed"
 		row := d.pool.QueryRow(ctx, "SELECT state FROM runs WHERE id = $1", taskID)
 		var currentState string
-		if err := row.Scan(&currentState); err == nil && currentState == "kill_requested" {
-			state = "killed"
-		} else if !isSuccess {
+		row.Scan(&currentState)
+		if !isSuccess {
 			state = "failed"
+		}
+		// Only mark as killed if the result itself indicates the kill took effect
+		// (non-success AND the DB state was kill_requested)
+		if currentState == "kill_requested" && !isSuccess {
+			state = "killed"
 		}
 		err := d.queries.UpdateRunState(ctx, db.UpdateRunStateParams{
 			ID:         taskID,
@@ -272,7 +278,9 @@ func (d *Dispatcher) ProcessResult(ctx context.Context, result TaskResult) error
 		}
 
 		durMs := result.DurationMs
-		if currentState == string(jobstate.KillRequested) {
+		// Only mark as killed if kill was requested AND the task did not complete successfully.
+		// If the task finished before the kill took effect, honor the real outcome.
+		if currentState == string(jobstate.KillRequested) && !isSuccess {
 			return d.queries.UpdateJobState(ctx, db.UpdateJobStateParams{
 				ID:         taskID,
 				State:      string(jobstate.Killed),
@@ -325,10 +333,12 @@ func (d *Dispatcher) getOrCreateChannel(workerID string) chan Task {
 }
 
 func (d *Dispatcher) countActiveByWorker(ctx context.Context, workerID string) (int64, error) {
+	// Count both running and kill_requested tasks — kill_requested tasks still consume
+	// worker capacity until the kill is confirmed and the process exits.
 	row := d.pool.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM runs WHERE worker_id = $1 AND state = 'running') +
-			(SELECT count(*) FROM jobs WHERE worker_id = $1 AND state = 'running')
+			(SELECT count(*) FROM runs WHERE worker_id = $1 AND state IN ('running', 'kill_requested')) +
+			(SELECT count(*) FROM jobs WHERE worker_id = $1 AND state IN ('running', 'kill_requested'))
 	`, workerID)
 	var count int64
 	if err := row.Scan(&count); err != nil {
