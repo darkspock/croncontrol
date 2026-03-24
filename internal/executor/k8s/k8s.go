@@ -256,7 +256,8 @@ func (m *Method) createJob(ctx context.Context, params executor.StartParams) (ku
 
 	namespace, _ := cfg["namespace"].(string)
 	clusterID, _ := cfg["k8s_cluster_id"].(string)
-	clientset, defaultNamespace, err := m.buildClientForHandle(ctx, clusterID)
+	inlineKubeconfig, _ := cfg["kubeconfig"].(string)
+	clientset, defaultNamespace, err := m.buildClientForConfig(ctx, clusterID, []byte(inlineKubeconfig))
 	if err != nil {
 		return nil, "", "", "", nil, err
 	}
@@ -372,9 +373,20 @@ func (m *Method) waitForBlockingResult(ctx context.Context, clientset kubernetes
 }
 
 func (m *Method) buildClientForHandle(ctx context.Context, clusterID string) (kubernetes.Interface, string, error) {
+	return m.buildClientForConfig(ctx, clusterID, nil)
+}
+
+// buildClientForConfig resolves a Kubernetes client from either a cluster loader (by ID)
+// or inline kubeconfig bytes. Inline kubeconfig takes precedence when present.
+func (m *Method) buildClientForConfig(ctx context.Context, clusterID string, inlineKubeconfig []byte) (kubernetes.Interface, string, error) {
 	var kubeconfig []byte
 	defaultNamespace := "default"
-	if clusterID != "" && m.loadCluster != nil {
+
+	if len(inlineKubeconfig) > 0 {
+		// Use inline kubeconfig (worker dispatch path)
+		kubeconfig = inlineKubeconfig
+	} else if clusterID != "" && m.loadCluster != nil {
+		// Use cluster loader (control plane path)
 		kc, defNs, err := m.loadCluster(ctx, clusterID)
 		if err != nil {
 			return nil, "", fmt.Errorf("k8s: load cluster: %w", err)

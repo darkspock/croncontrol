@@ -347,6 +347,9 @@ func (m *Method) resolveProfile(ctx context.Context, cfg map[string]any) (profil
 	if region := getString(cfg, "region"); region != "" {
 		profile.region = region
 	}
+	if roleARN := getString(cfg, "role_arn"); roleARN != "" {
+		profile.roleARN = roleARN
+	}
 	return profile, nil
 }
 

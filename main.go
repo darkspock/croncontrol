@@ -249,6 +249,17 @@ func run() error {
 		if len(proc.MethodConfig) > 0 {
 			_ = json.Unmarshal(proc.MethodConfig, &methodConfig)
 		}
+		if methodConfig == nil {
+			methodConfig = make(map[string]any)
+		}
+
+		// Resolve credential references into inline config for worker dispatch.
+		// Workers cannot access the control plane database, so credentials must be
+		// injected into the method_config before sending.
+		if err := resolveCredentialsForWorker(ctx, pool, proc.ExecutionMethod, methodConfig); err != nil {
+			slog.Error("worker dispatch: failed to resolve credentials", "method", proc.ExecutionMethod, "error", err)
+			return err
+		}
 
 		var environment map[string]any
 		if len(proc.Environment) > 0 {
@@ -285,6 +296,12 @@ func run() error {
 	})
 	queueProc.SetWorkerDispatch(func(ctx context.Context, job db.ClaimPendingJobsRow) error {
 		methodConfig := queue.BuildJobMethodConfig(job.QueueMethodConfig, job.Payload)
+
+		// Resolve credential references for worker dispatch
+		if err := resolveCredentialsForWorker(ctx, pool, job.ExecutionMethod, methodConfig); err != nil {
+			slog.Error("worker dispatch: failed to resolve job credentials", "method", job.ExecutionMethod, "error", err)
+			return err
+		}
 
 		selectedWorkerID, err := workerDisp.Dispatch(ctx, job.WorkspaceID, worker.Task{
 			ID:              job.ID,
@@ -640,6 +657,73 @@ func firstNonEmptyPtr(values ...*string) *string {
 		if v != nil && *v != "" {
 			return v
 		}
+	}
+	return nil
+}
+
+// resolveCredentialsForWorker resolves database-stored credential references
+// (ssh_credential_id, ssm_profile_id, k8s_cluster_id) into inline configuration
+// so the worker can execute without database access.
+func resolveCredentialsForWorker(ctx context.Context, pool *pgxpool.Pool, method string, cfg map[string]any) error {
+	switch method {
+	case "ssh":
+		credID, _ := cfg["ssh_credential_id"].(string)
+		if credID == "" {
+			return nil // inline credentials already present
+		}
+		var privateKey []byte
+		var username string
+		var port int32
+		var strictHostKey bool
+		err := pool.QueryRow(ctx,
+			`SELECT private_key_enc, username, port, strict_host_key FROM ssh_credentials WHERE id = $1`, credID,
+		).Scan(&privateKey, &username, &port, &strictHostKey)
+		if err != nil {
+			return fmt.Errorf("resolve ssh credential %s: %w", credID, err)
+		}
+		cfg["private_key"] = string(privateKey)
+		cfg["username"] = username
+		cfg["port"] = port
+		cfg["strict_host_key"] = strictHostKey
+		delete(cfg, "ssh_credential_id")
+
+	case "ssm":
+		profileID, _ := cfg["ssm_profile_id"].(string)
+		if profileID == "" {
+			return nil // inline config already present
+		}
+		var region string
+		var roleARN *string
+		err := pool.QueryRow(ctx,
+			`SELECT region, role_arn FROM ssm_profiles WHERE id = $1`, profileID,
+		).Scan(&region, &roleARN)
+		if err != nil {
+			return fmt.Errorf("resolve ssm profile %s: %w", profileID, err)
+		}
+		cfg["region"] = region
+		if roleARN != nil {
+			cfg["role_arn"] = *roleARN
+		}
+		delete(cfg, "ssm_profile_id")
+
+	case "k8s":
+		clusterID, _ := cfg["k8s_cluster_id"].(string)
+		if clusterID == "" {
+			return nil // inline config already present
+		}
+		var kubeconfig []byte
+		var defaultNamespace *string
+		err := pool.QueryRow(ctx,
+			`SELECT kubeconfig_enc, default_namespace FROM k8s_clusters WHERE id = $1`, clusterID,
+		).Scan(&kubeconfig, &defaultNamespace)
+		if err != nil {
+			return fmt.Errorf("resolve k8s cluster %s: %w", clusterID, err)
+		}
+		cfg["kubeconfig"] = string(kubeconfig)
+		if defaultNamespace != nil {
+			cfg["namespace"] = *defaultNamespace
+		}
+		delete(cfg, "k8s_cluster_id")
 	}
 	return nil
 }
