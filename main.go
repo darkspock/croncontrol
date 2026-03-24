@@ -720,7 +720,9 @@ func resolveCredentialsForWorker(ctx context.Context, pool *pgxpool.Pool, method
 			return fmt.Errorf("resolve k8s cluster %s: %w", clusterID, err)
 		}
 		cfg["kubeconfig"] = string(kubeconfig)
-		if defaultNamespace != nil {
+		// Only set namespace from cluster default if the process/queue config
+		// does not already specify one (explicit override takes precedence).
+		if defaultNamespace != nil && cfg["namespace"] == nil {
 			cfg["namespace"] = *defaultNamespace
 		}
 		delete(cfg, "k8s_cluster_id")
